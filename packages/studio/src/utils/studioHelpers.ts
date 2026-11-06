@@ -19,6 +19,7 @@ export interface AppToast {
 
 export type RightPanelTab =
   | "layers"
+  | "assistant"
   | "design"
   | "renders"
   | "block-params"

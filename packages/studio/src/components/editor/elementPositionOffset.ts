@@ -52,7 +52,32 @@ export function applyElementPositionOffset(
     Math.abs(after.height - before.height) <= 1;
   if (!shiftedExactly) {
     Object.assign(el.style, previous);
-    return "anchored";
+    // When the element is anchored via right/bottom or flex/grid, adjust right/bottom
+    // if positioned with right/bottom, or fall back to CSS translate so manual canvas
+    // drag never fails on AI-authored layouts.
+    if (!isStatic && (cs.right !== "auto" || cs.bottom !== "auto")) {
+      const patches: PatchOperation[] = [];
+      if (cs.left === "auto" && cs.right !== "auto" && !cs.right.endsWith("%")) {
+        const baseRight = Number.parseFloat(cs.right) || 0;
+        el.style.right = `${roundTo3(baseRight - dx)}px`;
+        patches.push({ type: "inline-style", property: "right", value: el.style.right });
+      } else {
+        el.style.left = `${roundTo3(baseLeft + dx)}px`;
+        patches.push({ type: "inline-style", property: "left", value: el.style.left });
+      }
+      if (cs.top === "auto" && cs.bottom !== "auto" && !cs.bottom.endsWith("%")) {
+        const baseBottom = Number.parseFloat(cs.bottom) || 0;
+        el.style.bottom = `${roundTo3(baseBottom - dy)}px`;
+        patches.push({ type: "inline-style", property: "bottom", value: el.style.bottom });
+      } else {
+        el.style.top = `${roundTo3(baseTop + dy)}px`;
+        patches.push({ type: "inline-style", property: "top", value: el.style.top });
+      }
+      return patches;
+    }
+    const translateValue = `${roundTo3(gestureOffset.x)}px ${roundTo3(gestureOffset.y)}px`;
+    el.style.translate = translateValue;
+    return [{ type: "inline-style", property: "translate", value: translateValue }];
   }
   if (lifted) el.removeAttribute(LAYER_REVEAL_PRIOR_POSITION_ATTR);
   return [

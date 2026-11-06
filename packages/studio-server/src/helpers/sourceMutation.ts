@@ -199,6 +199,13 @@ export function removeElementsFromHtml(
   for (const target of targets) {
     const element = findTargetElement(document, target);
     if (!element) continue;
+    // Cascade GSAP & CSS cleanup for all descendants with IDs before removing the container
+    const descendantsWithId = Array.from(element.querySelectorAll("[id]"));
+    for (const desc of descendantsWithId) {
+      const descId = desc.getAttribute("id");
+      removeElementWithGsapCascade(document, desc);
+      if (descId && !document.getElementById(descId)) dropCssRulesForId(document, descId);
+    }
     const id = element.getAttribute("id");
     removeElementWithGsapCascade(document, element);
     if (id && !document.getElementById(id)) dropCssRulesForId(document, id);
@@ -880,4 +887,476 @@ export function relinkSplitHalvesInHtml(source: string, rightHalfIds: readonly s
   }
   relinkSplitHalves(document, rightHalfIds);
   return wrappedFragment ? document.body.innerHTML || "" : document.toString();
+}
+
+export type DocumentaryPresetId = "callout-card" | "map-badge" | "stat-card" | "subscribe-cta";
+
+export interface InsertElementRequest {
+  kind: "text" | "image" | "group" | "preset";
+  presetId?: DocumentaryPresetId;
+  start: number;
+  duration: number;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+  text?: string;
+  src?: string;
+  track?: number;
+}
+
+export interface InsertElementResult {
+  html: string;
+  inserted: boolean;
+  elementId?: string;
+  hfId?: string;
+}
+
+export function insertElementInHtml(
+  source: string,
+  req: InsertElementRequest,
+): InsertElementResult {
+  const { document, wrappedFragment } = parseSourceDocument(source);
+  const compRoots = querySelectorAllWithTemplates(document, "[data-composition-id]");
+  const container = compRoots[0] ?? document.body;
+  if (!container) return { html: source, inserted: false };
+
+  let maxTrack = 0;
+  let maxZ = 90;
+  for (const node of querySelectorAllWithTemplates(document, "*")) {
+    const trkRaw = node.getAttribute("data-track-index") ?? node.getAttribute("data-track");
+    if (trkRaw != null) {
+      const trk = Number.parseInt(trkRaw, 10);
+      if (Number.isFinite(trk) && trk > maxTrack) maxTrack = trk;
+    }
+    const styleRaw = node.getAttribute("style") ?? "";
+    const zMatch = styleRaw.match(/(?:^|;|\s)z-index\s*:\s*(-?\d+)/i);
+    if (zMatch?.[1]) {
+      const zv = Number.parseInt(zMatch[1], 10);
+      if (Number.isFinite(zv) && zv > maxZ) maxZ = zv;
+    }
+  }
+  const trackIndex =
+    req.track != null && Number.isFinite(req.track) ? Math.round(req.track) : maxTrack + 1;
+  const topZ = Math.max(100, maxZ + 10);
+
+  const prefix =
+    req.kind === "text"
+      ? "text-layer"
+      : req.kind === "image"
+        ? "image-layer"
+        : req.kind === "group"
+          ? "group"
+          : `preset-${req.presetId ?? "card"}`;
+  const id = nextUniqueId(document, prefix);
+  const hfId = `hf-${id}`;
+  const startNum = Math.max(0, Number((req.start ?? 0).toFixed(3)));
+  const startStr = String(startNum);
+  const durationStr = String(Math.max(0.1, Number((req.duration ?? 5).toFixed(3))));
+
+  let el: Element;
+  if (req.kind === "text") {
+    el = document.createElement("div");
+    el.setAttribute("id", id);
+    el.setAttribute("data-hf-id", hfId);
+    el.setAttribute("data-start", startStr);
+    el.setAttribute("data-duration", durationStr);
+    el.setAttribute("data-track-index", String(trackIndex));
+    const left = Math.round(req.left ?? 200);
+    const top = Math.round(req.top ?? 200);
+    el.setAttribute(
+      "style",
+      `position: absolute; left: ${left}px; top: ${top}px; z-index: ${topZ}; opacity: 1; visibility: visible; font-size: 40px; font-weight: 800; color: #FFFFFF; line-height: 1.2; text-shadow: 0 2px 12px rgba(0,0,0,0.65);`,
+    );
+    el.textContent = req.text?.trim() || "New Text";
+  } else if (req.kind === "group") {
+    el = document.createElement("div");
+    el.setAttribute("id", id);
+    el.setAttribute("data-hf-id", hfId);
+    el.setAttribute("data-hf-group", req.text?.trim() || "Group");
+    el.setAttribute("data-start", startStr);
+    el.setAttribute("data-duration", durationStr);
+    el.setAttribute("data-track-index", String(trackIndex));
+    const left = Math.round(req.left ?? 240);
+    const top = Math.round(req.top ?? 180);
+    const width = Math.round(req.width ?? 600);
+    const height = Math.round(req.height ?? 400);
+    el.setAttribute(
+      "style",
+      `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; z-index: ${topZ}; opacity: 1; visibility: visible; overflow: visible;`,
+    );
+  } else if (req.kind === "preset") {
+    el = document.createElement("div");
+    el.setAttribute("id", id);
+    el.setAttribute("data-hf-id", hfId);
+    el.setAttribute("data-start", startStr);
+    el.setAttribute("data-duration", durationStr);
+    el.setAttribute("data-track-index", String(trackIndex));
+    const presetId = req.presetId ?? "callout-card";
+    if (presetId === "map-badge") {
+      const left = Math.round(req.left ?? 220);
+      const top = Math.round(req.top ?? 160);
+      el.setAttribute(
+        "style",
+        `position: absolute; left: ${left}px; top: ${top}px; z-index: ${topZ}; opacity: 1; visibility: visible; background: rgba(20,40,56,0.94); padding: 8px 16px; border-left: 4px solid #357F83; font-size: 18px; font-weight: 800; letter-spacing: 1px; color: #F5F0E6; text-transform: uppercase; box-shadow: 0 6px 18px rgba(0,0,0,0.45);`,
+      );
+      el.textContent = req.text?.trim() || "STRATEGIC CHOKEPOINT";
+    } else if (presetId === "stat-card") {
+      const left = Math.round(req.left ?? 140);
+      const top = Math.round(req.top ?? 220);
+      el.setAttribute(
+        "style",
+        `position: absolute; left: ${left}px; top: ${top}px; width: 520px; z-index: ${topZ}; opacity: 1; visibility: visible; background: rgba(20,40,56,0.94); padding: 24px 28px; border-top: 5px solid #C49A44; border-radius: 4px; box-shadow: 0 14px 32px rgba(0,0,0,0.55);`,
+      );
+      el.innerHTML =
+        `<div id="${id}-metric" data-hf-id="hf-${id}-metric" style="font-size: 56px; font-weight: 900; color: #C49A44; line-height: 1.05;">21M bbl/d</div>` +
+        `<div id="${id}-desc" data-hf-id="hf-${id}-desc" style="font-size: 28px; font-weight: 700; color: #FFFFFF; margin-top: 8px; line-height: 1.25;">Daily maritime transit volume through the strait</div>` +
+        `<div id="${id}-cite" data-hf-id="hf-${id}-cite" style="font-size: 16px; color: #E8DFD0; margin-top: 10px; letter-spacing: 0.5px;">Source: U.S. EIA Chokepoint Assessment</div>`;
+    } else if (presetId === "subscribe-cta") {
+      const left = Math.round(req.left ?? 720);
+      const top = Math.round(req.top ?? 860);
+      el.setAttribute(
+        "style",
+        `position: absolute; left: ${left}px; top: ${top}px; z-index: ${topZ}; opacity: 1; visibility: visible; background: linear-gradient(135deg, #D9383A 0%, #9E2426 100%); border: 2px solid #F5F0E6; border-radius: 6px; padding: 16px 32px; color: #FFFFFF; font-size: 28px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; box-shadow: 0 12px 28px rgba(0,0,0,0.55);`,
+      );
+      el.textContent = req.text?.trim() || "SUBSCRIBE · TURNING POINT STORIES";
+    } else {
+      // Default: Editorial Callout Card
+      const left = Math.round(req.left ?? 90);
+      const top = Math.round(req.top ?? 760);
+      el.setAttribute(
+        "style",
+        `position: absolute; left: ${left}px; top: ${top}px; width: 1740px; z-index: ${topZ}; opacity: 1; visibility: visible; background: rgba(20,40,56,0.94); padding: 22px 32px; border-left: 6px solid #C49A44; border-radius: 4px; box-shadow: 0 14px 32px rgba(0,0,0,0.55);`,
+      );
+      el.innerHTML =
+        `<div id="${id}-kicker" data-hf-id="hf-${id}-kicker" style="font-size: 15px; letter-spacing: 2px; text-transform: uppercase; color: #F5F0E6; font-weight: 700;">Turning Point Analysis</div>` +
+        `<div id="${id}-headline" data-hf-id="hf-${id}-headline" style="font-size: 32px; font-weight: 900; color: #FFFFFF; margin-top: 6px; line-height: 1.2;">Control of narrow waterways reshapes global leverage.</div>`;
+    }
+  } else {
+    el = document.createElement("img");
+    el.setAttribute("id", id);
+    el.setAttribute("data-hf-id", hfId);
+    el.setAttribute("data-start", startStr);
+    el.setAttribute("data-duration", durationStr);
+    el.setAttribute("data-track-index", String(trackIndex));
+    const left = Math.round(req.left ?? 360);
+    const top = Math.round(req.top ?? 180);
+    const width = Math.round(req.width ?? 480);
+    el.setAttribute("src", req.src || "");
+    el.setAttribute("alt", req.text || id);
+    el.setAttribute(
+      "style",
+      `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: auto; z-index: ${topZ}; opacity: 1; visibility: visible; object-fit: contain;`,
+    );
+  }
+
+  const firstScript = Array.from(container.children).find(
+    (child) => child.tagName.toLowerCase() === "script",
+  );
+  if (firstScript) {
+    container.insertBefore(el, firstScript);
+    const scriptText = firstScript.textContent ?? "";
+    const tlVarMatch = scriptText.match(
+      /(?:const|let|var)\s+([a-zA-Z_$][\w$]*)\s*=\s*gsap\.timeline/,
+    );
+    if (tlVarMatch?.[1]) {
+      const tlVar = tlVarMatch[1];
+      const tweenLine = `      ${tlVar}.fromTo('#${id}', { opacity: 0 }, { opacity: 1, duration: 0.25, ease: 'power2.out' }, ${startNum});\n`;
+      if (scriptText.includes("window.__timelines")) {
+        firstScript.textContent = scriptText.replace(
+          /(\s*window\.__timelines\b)/,
+          `\n${tweenLine}$1`,
+        );
+      }
+    }
+  } else {
+    container.appendChild(el);
+  }
+
+  return {
+    html: wrappedFragment ? document.body.innerHTML || "" : document.toString(),
+    inserted: true,
+    elementId: id,
+    hfId,
+  };
+}
+
+export interface UnbundleChildEntry {
+  target: SourceMutationTarget;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  zIndex?: number;
+  start?: number;
+  duration?: number;
+  track?: number;
+}
+
+export interface UnbundleContainerRequest {
+  containerTarget?: SourceMutationTarget;
+  containerBox?: { left: number; top: number; width: number; height: number };
+  children: UnbundleChildEntry[];
+}
+
+export interface UnbundleContainerResult {
+  html: string;
+  unbundled: boolean;
+  childIds: string[];
+}
+
+export function unbundleContainerInHtml(
+  source: string,
+  req: UnbundleContainerRequest,
+): UnbundleContainerResult {
+  const { document, wrappedFragment } = parseSourceDocument(source);
+  let changed = false;
+  const childIds: string[] = [];
+
+  if (req.containerTarget) {
+    const container = findTargetElement(document, req.containerTarget);
+    if (container && isHTMLElement(container)) {
+      container.style.removeProperty("grid-template-columns");
+      container.style.removeProperty("grid-template-rows");
+      container.style.removeProperty("gap");
+      container.style.removeProperty("column-gap");
+      container.style.removeProperty("row-gap");
+      container.style.removeProperty("flex-direction");
+      container.style.removeProperty("justify-content");
+      container.style.removeProperty("align-items");
+      container.style.removeProperty("flex-wrap");
+      container.style.removeProperty("overflow");
+      container.style.removeProperty("overflow-x");
+      container.style.removeProperty("overflow-y");
+      container.style.display = "block";
+      container.style.overflow = "visible";
+      if (req.containerBox) {
+        container.style.removeProperty("inset");
+        container.style.removeProperty("right");
+        container.style.removeProperty("bottom");
+        container.style.position = "absolute";
+        container.style.left = `${Math.round(req.containerBox.left)}px`;
+        container.style.top = `${Math.round(req.containerBox.top)}px`;
+        container.style.width = `${Math.round(req.containerBox.width)}px`;
+        container.style.height = `${Math.round(req.containerBox.height)}px`;
+      }
+      changed = true;
+    }
+  }
+
+  for (const [idx, item] of (req.children ?? []).entries()) {
+    const child = findTargetElement(document, item.target);
+    if (!child || !isHTMLElement(child)) continue;
+    if (!child.id) {
+      const tag = child.tagName.toLowerCase();
+      child.id = nextUniqueId(document, tag === "img" ? "layer-img" : "layer-item");
+    }
+    if (!child.getAttribute("data-hf-id")) {
+      child.setAttribute("data-hf-id", `hf-${child.id}`);
+    }
+    if (item.start != null && Number.isFinite(item.start) && !child.hasAttribute("data-start")) {
+      child.setAttribute("data-start", String(Math.max(0, Number(item.start.toFixed(3)))));
+    }
+    if (
+      item.duration != null &&
+      Number.isFinite(item.duration) &&
+      item.duration > 0 &&
+      !child.hasAttribute("data-duration")
+    ) {
+      child.setAttribute("data-duration", String(Math.max(0.1, Number(item.duration.toFixed(3)))));
+    }
+    if (item.track != null && Number.isFinite(item.track)) {
+      child.setAttribute("data-track-index", String(Math.round(item.track)));
+    }
+
+    child.style.removeProperty("inset");
+    child.style.removeProperty("right");
+    child.style.removeProperty("bottom");
+    child.style.removeProperty("flex");
+    child.style.removeProperty("grid-column");
+    child.style.removeProperty("grid-row");
+    if (child.children.length > 0 && child.tagName.toLowerCase() !== "svg") {
+      child.style.removeProperty("grid-template-columns");
+      child.style.removeProperty("grid-template-rows");
+      child.style.removeProperty("gap");
+      child.style.removeProperty("column-gap");
+      child.style.removeProperty("row-gap");
+      child.style.removeProperty("flex-direction");
+      child.style.removeProperty("justify-content");
+      child.style.removeProperty("align-items");
+      child.style.removeProperty("flex-wrap");
+      child.style.removeProperty("overflow");
+      child.style.removeProperty("overflow-x");
+      child.style.removeProperty("overflow-y");
+      child.style.display = "block";
+      child.style.overflow = "visible";
+    }
+    child.style.position = "absolute";
+    child.style.left = `${Math.round(item.left)}px`;
+    child.style.top = `${Math.round(item.top)}px`;
+    child.style.width = `${Math.round(item.width)}px`;
+    child.style.height = `${Math.round(item.height)}px`;
+    child.style.margin = "0px";
+    child.style.boxSizing = "border-box";
+    if (item.zIndex != null && Number.isFinite(item.zIndex)) {
+      child.style.zIndex = String(Math.round(item.zIndex));
+    } else if (!child.style.zIndex) {
+      child.style.zIndex = String(10 + idx);
+    }
+    childIds.push(child.id);
+    changed = true;
+  }
+
+  if (!changed) return { html: source, unbundled: false, childIds: [] };
+  return {
+    html: wrappedFragment ? document.body.innerHTML || "" : document.toString(),
+    unbundled: true,
+    childIds,
+  };
+}
+
+export interface GroupElementMemberEntry {
+  target: SourceMutationTarget;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  zIndex?: number;
+}
+
+export interface GroupElementsRequest {
+  groupLabel?: string;
+  bbox: { left: number; top: number; width: number; height: number };
+  start?: number;
+  duration?: number;
+  zIndex?: number;
+  members: GroupElementMemberEntry[];
+}
+
+export interface GroupElementsResult {
+  html: string;
+  grouped: boolean;
+  groupId?: string;
+  hfId?: string;
+}
+
+export function groupElementsInHtml(
+  source: string,
+  req: GroupElementsRequest,
+): GroupElementsResult {
+  const { document, wrappedFragment } = parseSourceDocument(source);
+  if (!Array.isArray(req.members) || req.members.length === 0) {
+    return { html: source, grouped: false };
+  }
+
+  const resolved: Array<{ el: HTMLElement; entry: GroupElementMemberEntry }> = [];
+  const seen = new Set<Element>();
+  for (const entry of req.members) {
+    const el = findTargetElement(document, entry.target);
+    if (!el || !isHTMLElement(el) || seen.has(el)) continue;
+    seen.add(el);
+    resolved.push({ el, entry });
+  }
+  if (resolved.length === 0) {
+    return { html: source, grouped: false };
+  }
+
+  const groupId = nextUniqueId(document, "group");
+  const hfId = `hf-${groupId}`;
+  const wrapper = document.createElement("div");
+  wrapper.setAttribute("id", groupId);
+  wrapper.setAttribute("data-hf-id", hfId);
+  wrapper.setAttribute("data-hf-group", req.groupLabel?.trim() || "Group");
+  if (req.start != null && Number.isFinite(req.start)) {
+    wrapper.setAttribute("data-start", String(Math.max(0, Number(req.start.toFixed(3)))));
+  }
+  if (req.duration != null && Number.isFinite(req.duration) && req.duration > 0) {
+    wrapper.setAttribute("data-duration", String(Math.max(0.1, Number(req.duration.toFixed(3)))));
+  }
+  const zIndex = req.zIndex ?? 45;
+  wrapper.setAttribute(
+    "style",
+    `position: absolute; left: ${Math.round(req.bbox.left)}px; top: ${Math.round(req.bbox.top)}px; width: ${Math.max(1, Math.round(req.bbox.width))}px; height: ${Math.max(1, Math.round(req.bbox.height))}px; z-index: ${Math.round(zIndex)}; overflow: visible;`,
+  );
+
+  const firstParent =
+    resolved[0]!.el.parentElement ??
+    querySelectorAllWithTemplates(document, "[data-composition-id]")[0] ??
+    document.body;
+  firstParent.insertBefore(wrapper, resolved[0]!.el);
+
+  resolved.forEach(({ el, entry }, idx) => {
+    if (!el.id) {
+      el.id = nextUniqueId(document, "group-item");
+    }
+    if (!el.getAttribute("data-hf-id")) {
+      el.setAttribute("data-hf-id", `hf-${el.id}`);
+    }
+    el.style.removeProperty("inset");
+    el.style.removeProperty("right");
+    el.style.removeProperty("bottom");
+    el.style.position = "absolute";
+    el.style.left = `${Math.round(entry.left)}px`;
+    el.style.top = `${Math.round(entry.top)}px`;
+    el.style.width = `${Math.max(1, Math.round(entry.width))}px`;
+    el.style.height = `${Math.max(1, Math.round(entry.height))}px`;
+    el.style.margin = "0px";
+    el.style.zIndex = String(entry.zIndex ?? 10 + idx);
+    wrapper.appendChild(el);
+  });
+
+  return {
+    html: wrappedFragment ? document.body.innerHTML || "" : document.toString(),
+    grouped: true,
+    groupId,
+    hfId,
+  };
+}
+
+export interface ReorderTrackEntry {
+  target: SourceMutationTarget;
+  trackIndex: number;
+  zIndex: number;
+}
+
+export interface ReorderTracksRequest {
+  entries: ReorderTrackEntry[];
+}
+
+export interface ReorderTracksResult {
+  html: string;
+  changed: boolean;
+}
+
+export function reorderTracksInHtml(
+  source: string,
+  req: ReorderTracksRequest,
+): ReorderTracksResult {
+  const { document, wrappedFragment } = parseSourceDocument(source);
+  if (!Array.isArray(req.entries) || req.entries.length === 0) {
+    return { html: source, changed: false };
+  }
+  let changed = false;
+  for (const entry of req.entries) {
+    const el = findTargetElement(document, entry.target);
+    if (!el || !isHTMLElement(el)) continue;
+    if (Number.isFinite(entry.trackIndex)) {
+      el.setAttribute("data-track-index", String(Math.round(entry.trackIndex)));
+      changed = true;
+    }
+    if (Number.isFinite(entry.zIndex)) {
+      let style = el.getAttribute("style") ?? "";
+      if (!/(?:^|;|\s)position\s*:/i.test(style)) {
+        style = patchStyleAttrString(style, "position", "relative");
+      }
+      style = patchStyleAttrString(style, "z-index", String(Math.round(entry.zIndex)));
+      el.setAttribute("style", style);
+      changed = true;
+    }
+  }
+  if (!changed) return { html: source, changed: false };
+  return {
+    html: wrappedFragment ? document.body.innerHTML || "" : document.toString(),
+    changed: true,
+  };
 }

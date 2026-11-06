@@ -461,6 +461,8 @@ export const DomEditOverlay = memo(function DomEditOverlay({
     selection,
     selectionRef,
     hoverSelectionRef,
+    iframeRef,
+    activeCompositionPathRef,
     onCanvasPointerMoveRef,
     onSelectionChangeRef,
   });
@@ -579,6 +581,10 @@ export const DomEditOverlay = memo(function DomEditOverlay({
               : undefined
           }
           onZOrderCrossed={handleZOrderCrossed}
+          layersUnderCursor={contextMenu.layersUnderCursor}
+          onSelectLayer={(layerSel) => {
+            onSelectionChangeRef.current(layerSel, { revealPanel: true });
+          }}
         />
       )}
       <ZOrderCrossedFlash rect={zOrderFlashRect} />

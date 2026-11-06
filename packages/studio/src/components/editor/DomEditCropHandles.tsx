@@ -352,7 +352,7 @@ export function DomEditCropHandles({
         {EDGES.map((edge) => {
           const layout = edgeHandleLayout(edge, cropRect);
           if (!layout) return null;
-          const revealed = dragging || hasCrop || hotEdge === edge;
+          const revealed = dragging || hasCrop || showPresetBar || hotEdge === edge;
           return (
             <button
               key={edge}
@@ -377,7 +377,7 @@ export function DomEditCropHandles({
                 className="pointer-events-none rounded-full bg-studio-accent/90 shadow-[0_0_0_1px_rgba(0,0,0,0.4)] transition-opacity duration-100"
                 style={{
                   ...layout.pill,
-                  opacity: revealed ? 1 : 0,
+                  opacity: revealed ? 1 : 0.65,
                 }}
               />
             </button>

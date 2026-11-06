@@ -2,14 +2,18 @@ import { isValidProjectId } from "./src/utils/projectRouting";
 // Vite adapter that wires the shared Studio API to the local filesystem and build tools.
 
 import {
+  copyFileSync,
+  lstatSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   existsSync,
+  symlinkSync,
   writeFileSync,
   realpathSync,
   unlinkSync,
 } from "node:fs";
-import { basename, join, relative, resolve, isAbsolute, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, isAbsolute, sep } from "node:path";
 import type { ViteDevServer } from "vite";
 import {
   type ResolvedProject,
@@ -106,6 +110,46 @@ export function createProjectSignatureCache({
 const isServableProjectId = (id: string) =>
   isValidProjectId(id) && !(process.platform === "win32" && id.includes(":"));
 
+function syncProductionStudioEpisodes(dataDir: string): void {
+  const prodRoot =
+    process.env.PRODUCTION_STUDIO_ROOT || "/Users/yonassayfu/Projects/ProductionStudio";
+  const channelsDir = join(prodRoot, "channels");
+  if (!existsSync(channelsDir)) return;
+  try {
+    mkdirSync(dataDir, { recursive: true });
+    for (const chEntry of readdirSync(channelsDir, { withFileTypes: true })) {
+      if (!chEntry.isDirectory()) continue;
+      const episodesDir = join(channelsDir, chEntry.name, "episodes");
+      if (!existsSync(episodesDir)) continue;
+      for (const epEntry of readdirSync(episodesDir, { withFileTypes: true })) {
+        if (!epEntry.isDirectory() || !isServableProjectId(epEntry.name)) continue;
+        const sourcesDir = join(episodesDir, epEntry.name, "Sources");
+        if (!existsSync(join(sourcesDir, "index.html"))) continue;
+        const linkPath = join(dataDir, epEntry.name);
+        try {
+          const stat = lstatSync(linkPath);
+          if (stat.isSymbolicLink()) {
+            const currentTarget = realpathSync(linkPath);
+            const desiredTarget = realpathSync(sourcesDir);
+            if (currentTarget !== desiredTarget) {
+              unlinkSync(linkPath);
+              symlinkSync(desiredTarget, linkPath, "dir");
+            }
+          }
+        } catch {
+          try {
+            symlinkSync(realpathSync(sourcesDir), linkPath, "dir");
+          } catch {
+            /* ignore race condition */
+          }
+        }
+      }
+    }
+  } catch {
+    /* ignore discovery errors */
+  }
+}
+
 export function createViteAdapter(
   dataDir: string,
   server: ViteDevServer,
@@ -191,6 +235,7 @@ export function createViteAdapter(
 
     // fallow-ignore-next-line complexity
     listProjects() {
+      syncProductionStudioEpisodes(dataDir);
       if (!existsSync(dataDir)) return [];
       const sessionsDir = resolve(dataDir, "../sessions");
       const sessionMap = new Map<string, { sessionId: string; title: string }>();
@@ -238,6 +283,7 @@ export function createViteAdapter(
     // fallow-ignore-next-line complexity
     resolveProject(id: string) {
       if (!isServableProjectId(id)) return null;
+      syncProductionStudioEpisodes(dataDir);
       let projectDir = resolve(dataDir, id);
       if (!isPathWithin(dataDir, projectDir)) return null;
       if (!existsSync(projectDir)) {
@@ -377,6 +423,22 @@ export function createViteAdapter(
           if (job.audioLoweredDb !== undefined) state.audioLoweredDb = job.audioLoweredDb;
           state.status = "complete";
           state.progress = 100;
+          let episodeDraftPath: string | undefined;
+          if (opts.format === "mp4" && existsSync(opts.outputPath)) {
+            try {
+              const realProjectDir = realpathSync(opts.project.dir);
+              if (basename(realProjectDir) === "Sources") {
+                const epRoot = dirname(realProjectDir);
+                const epRendersDir = join(epRoot, "Renders");
+                mkdirSync(epRendersDir, { recursive: true });
+                const targetDraft = join(epRendersDir, `${opts.project.id}_Draft.mp4`);
+                copyFileSync(opts.outputPath, targetDraft);
+                episodeDraftPath = targetDraft;
+              }
+            } catch (copyErr) {
+              console.warn("[Studio] Auto-copy to Episode Renders/ failed:", copyErr);
+            }
+          }
           const metaPath = opts.outputPath.replace(/\.(mp4|webm|mov|gif)$/, ".meta.json");
           writeFileSync(
             metaPath,
@@ -384,6 +446,7 @@ export function createViteAdapter(
               status: "complete",
               durationMs: Date.now() - startTime,
               ...(job.audioLoweredDb !== undefined ? { audioLoweredDb: job.audioLoweredDb } : {}),
+              ...(episodeDraftPath ? { episodeDraftPath } : {}),
             }),
           );
         } catch (err) {

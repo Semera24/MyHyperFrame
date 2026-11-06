@@ -1084,6 +1084,113 @@ describe("collectRuntimeTimelinePayload", () => {
     expect(result.clips.find((c) => c.id === "my-script")).toBeUndefined();
   });
 
+  it("unbundles nested GSAP children, media leaves, entrance visibility windows, and distinct tracks", () => {
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "s01");
+    root.setAttribute("data-duration", "20");
+    document.body.appendChild(root);
+
+    const logo = document.createElement("svg");
+    logo.id = "s01-logo";
+    logo.setAttribute("data-hf-id", "hf-logo");
+    root.appendChild(logo);
+
+    const card = document.createElement("div");
+    card.id = "s01-q-card";
+    card.setAttribute("data-hf-id", "hf-q-card");
+    root.appendChild(card);
+
+    const qText = document.createElement("div");
+    qText.id = "s01-q-text";
+    qText.setAttribute("data-hf-id", "hf-q-text");
+    qText.textContent = "Central Question?";
+    card.appendChild(qText);
+
+    const opt1 = document.createElement("div");
+    opt1.id = "s01-opt-1";
+    opt1.setAttribute("data-hf-id", "hf-opt-1");
+    opt1.textContent = "1. The Announcement?";
+    card.appendChild(opt1);
+
+    const opt2 = document.createElement("div");
+    opt2.id = "s01-opt-2";
+    opt2.setAttribute("data-hf-id", "hf-opt-2");
+    opt2.textContent = "2. The Invasion?";
+    card.appendChild(opt2);
+
+    (window as any).__timelines = {
+      s01: {
+        duration: () => 20,
+        time: () => 0,
+        play: () => {},
+        pause: () => {},
+        seek: () => {},
+        add: () => {},
+        paused: () => {},
+        set: () => {},
+        getChildren: () => [
+          {
+            targets: () => [card],
+            startTime: () => 4.6,
+            duration: () => 0.7,
+            vars: { opacity: 1, y: 0 },
+            parent: null,
+          },
+          {
+            targets: () => [opt1],
+            startTime: () => 9.2,
+            duration: () => 0.35,
+            vars: { opacity: 1 },
+            parent: null,
+          },
+          {
+            targets: () => [opt2],
+            startTime: () => 10.1,
+            duration: () => 0.35,
+            vars: { opacity: 1 },
+            parent: null,
+          },
+        ],
+      },
+    };
+
+    const result = collectRuntimeTimelinePayload(defaultParams);
+    const logoClip = result.clips.find((c) => c.id === "s01-logo");
+    const cardClip = result.clips.find((c) => c.id === "s01-q-card");
+    const qTextClip = result.clips.find((c) => c.id === "s01-q-text");
+    const opt1Clip = result.clips.find((c) => c.id === "s01-opt-1");
+    const opt2Clip = result.clips.find((c) => c.id === "s01-opt-2");
+
+    expect(logoClip).toBeDefined();
+    expect(logoClip?.start).toBe(0);
+    expect(logoClip?.duration).toBe(20);
+
+    expect(cardClip).toBeDefined();
+    expect(cardClip?.start).toBeCloseTo(4.6);
+    expect(cardClip?.duration).toBeCloseTo(15.4);
+
+    expect(qTextClip).toBeDefined();
+    expect(qTextClip?.start).toBeCloseTo(4.6);
+    expect(qTextClip?.duration).toBeCloseTo(15.4);
+
+    expect(opt1Clip).toBeDefined();
+    expect(opt1Clip?.start).toBeCloseTo(9.2);
+    expect(opt1Clip?.duration).toBeCloseTo(10.8);
+
+    expect(opt2Clip).toBeDefined();
+    expect(opt2Clip?.start).toBeCloseTo(10.1);
+    expect(opt2Clip?.duration).toBeCloseTo(9.9);
+
+    const tracks = new Set([
+      logoClip?.track,
+      cardClip?.track,
+      qTextClip?.track,
+      opt1Clip?.track,
+      opt2Clip?.track,
+    ]);
+    expect(tracks.size).toBe(5);
+  });
+
   describe("root duration with no data-duration and a GSAP timeline past the voiceover", () => {
     function appendVoicedRoot(timelineSeconds: number) {
       const root = document.createElement("div");

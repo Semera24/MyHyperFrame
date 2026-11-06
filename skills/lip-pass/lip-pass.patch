@@ -1,0 +1,215 @@
+diff --git a/lip_pass.py b/lip_pass.py
+new file mode 100644
+index 0000000..05729b3
+--- /dev/null
++++ b/lip_pass.py
+@@ -0,0 +1,99 @@
++"""One shot's lip pass for HyperFrames Desktop's re-perform, then its numbers.
++
++The generated shot (--source) gets its lips from the original performer's (--driving): lip region only, lips closed
++first, motion measured from the driving's most-closed frame and scaled by --gain. Then each of driving, source and the
++output is measured frame by frame (MediaPipe face mesh: inner-lip gap over face height; LivePortrait's own lip ratio
++agreed with it only r 0.22 on a real performer, too loose to gate on), and the output's mean absolute
++difference from the source frames is taken, so the caller can refuse a shot whose lip pass warped the face.
++
++  python lip_pass.py --source gen.mp4 --driving src.mp4 --out out.mp4 --metrics m.json [--gain 1.6] [--yunet f.onnx]
++  python lip_pass.py --self-check
++"""
++import argparse, json, os, subprocess, sys
++import numpy as np
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++
++
++def frames(path):
++    import cv2
++    cap, out = cv2.VideoCapture(path), []
++    while True:
++        ok, f = cap.read()
++        if not ok:
++            return out
++        out.append(f)
++
++
++def lip_open(bgr, sharp=False):
++    """Per frame inner-lip gap over face height (None where no face); with sharp, also the mouth's median detail
++    (Laplacian variance of the lips' box): LivePortrait blurs some mouths, which the gap alone can't see."""
++    import math, cv2, mediapipe as mp
++    lips = sorted({i for e in mp.solutions.face_mesh.FACEMESH_LIPS for i in e})
++    mesh, out, detail = mp.solutions.face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1), [], []
++    for k, f in enumerate(bgr):
++        r = mesh.process(np.ascontiguousarray(f[..., ::-1]))
++        if not r.multi_face_landmarks:
++            out.append(None)
++            continue
++        p = r.multi_face_landmarks[0].landmark
++        out.append(math.hypot(p[13].x - p[14].x, p[13].y - p[14].y) / max(1e-6, math.hypot(p[10].x - p[152].x, p[10].y - p[152].y)))
++        if sharp and k % 4 == 0:
++            h, w = f.shape[:2]; xs = [p[i].x * w for i in lips]; ys = [p[i].y * h for i in lips]; fh = abs(p[152].y - p[10].y) * h
++            box = f[max(0, int(min(ys) - .1 * fh)):int(max(ys) + .1 * fh), max(0, int(min(xs) - .1 * fh)):int(max(xs) + .1 * fh)]
++            if box.size: detail.append(cv2.Laplacian(cv2.resize(cv2.cvtColor(box, cv2.COLOR_BGR2GRAY), (96, 48)), cv2.CV_64F).var())
++    return (out, float(np.median(detail)) if detail else None) if sharp else out
++
++
++def frame_diff(a, b):
++    import cv2
++    n = min(len(a), len(b))
++    small = lambda f: cv2.resize(f, (192, int(192 * f.shape[0] / f.shape[1]))).astype(np.int16)
++    return float(np.mean([np.abs(small(a[i]) - small(b[i])).mean() for i in range(n)])) if n else 0.0
++
++
++def render(args):
++    env = {**os.environ, 'LP_LIP_REF': 'closed', 'LP_LIP_GAIN': str(args.gain), 'PYTORCH_ENABLE_MPS_FALLBACK': '1'}
++    if args.yunet:
++        env['LP_YUNET'] = args.yunet
++    work = args.out + '.work'
++    subprocess.run([sys.executable, os.path.join(HERE, 'inference.py'), '-s', args.source, '-d', args.driving, '-o', work,
++                    '--animation_region', 'lip', '--flag_normalize_lip', '--flag_crop_driving_video', '--source_max_dim', '1344'],
++                   cwd=HERE, env=env, check=True)
++    name = f"{os.path.splitext(os.path.basename(args.source))[0]}--{os.path.splitext(os.path.basename(args.driving))[0]}.mp4"
++    os.replace(os.path.join(work, name), args.out)
++    subprocess.run(['rm', '-rf', work])
++
++
++def measure(args):
++    d, s, o = frames(args.driving), frames(args.source), frames(args.out)
++    (so, ss), (oo, os_) = lip_open(s, sharp=True), lip_open(o, sharp=True)
++    return {'gain': args.gain, 'open': {'driving': lip_open(d), 'source': so, 'output': oo},
++            'diff': frame_diff(o, s), 'sharp': {'source': ss, 'output': os_}}
++
++
++def self_check():
++    a = [np.zeros((64, 64, 3), np.uint8)] * 3
++    b = [np.full((64, 64, 3), 10, np.uint8)] * 3
++    assert frame_diff(a, a) == 0.0 and abs(frame_diff(a, b) - 10) < 1e-6 and frame_diff(a, []) == 0.0
++    print('lip_pass self-check ok')
++
++
++def main():
++    p = argparse.ArgumentParser()
++    for k in ('--source', '--driving', '--out', '--metrics', '--yunet'):
++        p.add_argument(k)
++    p.add_argument('--gain', type=float, default=1.6)
++    p.add_argument('--self-check', action='store_true')
++    args = p.parse_args()
++    if args.self_check:
++        return self_check()
++    sys.path.insert(0, HERE)
++    os.chdir(HERE)
++    if not os.path.exists(args.out):  # an output already made is measured again, not re-rendered
++        render(args)
++    json.dump(measure(args), open(args.metrics, 'w'))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/src/live_portrait_pipeline.py b/src/live_portrait_pipeline.py
+index 2a58d40..9089d86 100644
+--- a/src/live_portrait_pipeline.py
++++ b/src/live_portrait_pipeline.py
+@@ -211,7 +211,13 @@ class LivePortraitPipeline(object):
+             key_r = 'R' if 'R' in driving_template_dct['motion'][0].keys() else 'R_d'  # compatible with previous keys
+             if inf_cfg.flag_relative_motion:
+                 if flag_is_driving_video:
+-                    x_d_exp_lst = [source_template_dct['motion'][i]['exp'] + driving_template_dct['motion'][i]['exp'] - driving_template_dct['motion'][0]['exp'] for i in range(n_frames)]
++                    # LP_LIP_REF=closed: lip motion measured from the driving's most-closed frame, not its first, so a held-open
++                    # note stays open; LP_LIP_GAIN scales it (the generated face's lips are closed first by flag_normalize_lip).
++                    ref = 0
++                    if os.environ.get('LP_LIP_REF') == 'closed':
++                        ref = int(np.argmin([float(np.ravel(c)[0]) for c in driving_template_dct['c_lip_lst'][:n_frames]]))
++                    gain = float(os.environ.get('LP_LIP_GAIN', '1'))
++                    x_d_exp_lst = [source_template_dct['motion'][i]['exp'] + gain * (driving_template_dct['motion'][i]['exp'] - driving_template_dct['motion'][ref]['exp']) for i in range(n_frames)]
+                     x_d_exp_lst_smooth = smooth(x_d_exp_lst, source_template_dct['motion'][0]['exp'].shape, device, inf_cfg.driving_smooth_observation_variance)
+                 else:
+                     x_d_exp_lst = [source_template_dct['motion'][i]['exp'] + (driving_template_dct['motion'][0]['exp'] - inf_cfg.lip_array) for i in range(n_frames)]
+diff --git a/src/utils/cropper.py b/src/utils/cropper.py
+index 64fd75e..49877d4 100644
+--- a/src/utils/cropper.py
++++ b/src/utils/cropper.py
+@@ -1,5 +1,6 @@
+ # coding: utf-8
+ 
++import os
+ import os.path as osp
+ import torch
+ import numpy as np
+@@ -18,7 +19,6 @@ from .crop import (
+ )
+ from .io import contiguous
+ from .rprint import rlog as log
+-from .face_analysis_diy import FaceAnalysisDIY
+ from .human_landmark_runner import LandmarkRunner as HumanLandmark
+ 
+ def make_abs_path(fn):
+@@ -60,12 +60,17 @@ class Cropper(object):
+             except:
+                     device = "cuda"
+                     face_analysis_wrapper_provider = ["CUDAExecutionProvider"]
+-        self.face_analysis_wrapper = FaceAnalysisDIY(
+-                    name="buffalo_l",
+-                    root=self.crop_cfg.insightface_root,
+-                    providers=face_analysis_wrapper_provider,
+-                )
+-        self.face_analysis_wrapper.prepare(ctx_id=device_id, det_size=(512, 512), det_thresh=self.crop_cfg.det_thresh)
++        if os.environ.get('LP_DETECTOR', 'yunet') == 'yunet':  # commercial-safe default; 'insightface' for the original
++            from .face_yunet import YuNetFaces
++            self.face_analysis_wrapper = YuNetFaces(det_thresh=self.crop_cfg.det_thresh)
++        else:
++            from .face_analysis_diy import FaceAnalysisDIY
++            self.face_analysis_wrapper = FaceAnalysisDIY(
++                name="buffalo_l",
++                root=self.crop_cfg.insightface_root,
++                providers=face_analysis_wrapper_provider,
++            )
++            self.face_analysis_wrapper.prepare(ctx_id=device_id, det_size=(512, 512), det_thresh=self.crop_cfg.det_thresh)
+         self.face_analysis_wrapper.warmup()
+ 
+         self.human_landmark_runner = HumanLandmark(
+diff --git a/src/utils/face_yunet.py b/src/utils/face_yunet.py
+new file mode 100644
+index 0000000..e1749de
+--- /dev/null
++++ b/src/utils/face_yunet.py
+@@ -0,0 +1,42 @@
++# coding: utf-8
++"""YuNet (OpenCV zoo, MIT) in place of InsightFace's detector (non-commercial models): the face box and its 5 points
++(eyes, nose, mouth corners) seed LivePortrait's own 203-point landmark model, which accepts 5 points (crop.parse_pt2_from_pt5)."""
++import os
++import cv2
++import numpy as np
++
++YUNET = os.environ.get('LP_YUNET', os.path.join(os.path.dirname(__file__), '../../pretrained_weights/yunet/face_detection_yunet_2023mar.onnx'))
++
++
++class Face(dict):  # dict with attribute access, as InsightFace's Face
++    __getattr__ = dict.get
++
++
++class YuNetFaces:
++    def __init__(self, det_thresh=0.5):
++        self.det = cv2.FaceDetectorYN.create(YUNET, '', (320, 320), det_thresh, 0.3, 5000)
++
++    def get(self, img_bgr, direction='large-small', max_face_num=0, **kwargs):
++        h, w = img_bgr.shape[:2]
++        self.det.setInputSize((w, h))
++        _, found = self.det.detect(img_bgr)
++        faces = []
++        for f in (found if found is not None else []):
++            x, y, bw, bh = f[:4]
++            faces.append(Face({'bbox': np.array([x, y, x + bw, y + bh], np.float32),
++                          'landmark_2d_106': f[4:14].reshape(5, 2).astype(np.float32),  # name kept for the cropper
++                          'det_score': float(f[14])}))
++        area = lambda d: (d['bbox'][2] - d['bbox'][0]) * (d['bbox'][3] - d['bbox'][1])
++        faces.sort(key=area, reverse=direction != 'small-large')
++        return faces[:max_face_num] if max_face_num else faces
++
++    def warmup(self):
++        self.get(np.zeros((512, 512, 3), np.uint8))
++
++
++if __name__ == '__main__':  # self-check: finds one face with 5 points in a test portrait
++    import sys
++    img = cv2.imread(sys.argv[1])
++    got = YuNetFaces().get(img)
++    assert got and got[0]['landmark_2d_106'].shape == (5, 2), got
++    print('ok', got[0]['bbox'], got[0]['det_score'])

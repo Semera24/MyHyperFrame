@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { CaptionOverlay } from "../../captions/components/CaptionOverlay";
 import { useCaptionStore } from "../../captions/store";
 import { ConnectedDomEditOverlay } from "../editor/ConnectedDomEditOverlay";
@@ -6,13 +6,106 @@ import { TopologyLens } from "../editor/TopologyLens";
 import { MotionPathOverlay } from "../editor/MotionPathOverlay";
 import { SnapToolbar } from "../editor/SnapToolbar";
 import { GridOverlay } from "../editor/GridOverlay";
+import { usePreviewOverlayContext } from "../editor/PreviewOverlayProvider";
 import { usePreviewReadOnly } from "../editor/previewReadOnlyContext";
 import { useCompositionDimensions } from "../../hooks/useCompositionDimensions";
 import { useStudioPlaybackContext, useStudioShellContext } from "../../contexts/StudioContext";
 import { useDomEditSelectionContext } from "../../contexts/DomEditContext";
+import { useDocumentaryQcOverlayStore } from "../../utils/studioLayerActions";
+import { CanvasCommentsOverlay } from "../editor/CanvasCommentsOverlay";
 import type { BlockPreviewInfo } from "../sidebar/BlocksTab";
 import type { GestureRecordingState } from "../editor/GestureRecordControl";
 import type { ReactNode } from "react";
+
+function DocumentaryQcOverlay({
+  iframeRef,
+}: {
+  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+}) {
+  const safeZoneVisible = useDocumentaryQcOverlayStore((s) => s.safeZoneVisible);
+  const backdropMode = useDocumentaryQcOverlayStore((s) => s.backdropMode);
+  const cycleBackdropMode = useDocumentaryQcOverlayStore((s) => s.cycleBackdropMode);
+  const { state } = usePreviewOverlayContext();
+  const {
+    scaleX,
+    scaleY,
+    left: compositionLeft,
+    top: compositionTop,
+    width: compositionWidth,
+    height: compositionHeight,
+  } = state.compositionRect;
+
+  useEffect(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    const styleId = "hf-qc-backdrop-override";
+    let styleEl = doc.getElementById(styleId) as HTMLStyleElement | null;
+    if (backdropMode === "default") {
+      styleEl?.remove();
+      return;
+    }
+    if (!styleEl) {
+      styleEl = doc.createElement("style");
+      styleEl.id = styleId;
+      doc.head.appendChild(styleEl);
+    }
+    const bgCss =
+      backdropMode === "checkerboard"
+        ? "repeating-conic-gradient(#cbd5e1 0% 25%, #f8fafc 0% 50%) 50% / 28px 28px !important"
+        : backdropMode === "light"
+          ? "#F5F0E6 !important"
+          : "#142838 !important";
+    styleEl.textContent = `
+      html, body, #root, [data-composition-id] {
+        background: ${bgCss};
+      }
+      [id$="-bg"], [class*="bg-plate"], .vignette, .grain {
+        opacity: 0.08 !important;
+      }
+    `;
+    return () => {
+      styleEl?.remove();
+    };
+  }, [backdropMode, iframeRef]);
+
+  if (!safeZoneVisible && backdropMode === "default") return null;
+
+  const safeLeft = compositionLeft + 90 * scaleX;
+  const safeTop = compositionTop + 70 * scaleY;
+  const safeWidth = Math.max(0, compositionWidth - 180 * scaleX);
+  const safeHeight = Math.max(0, compositionHeight - 140 * scaleY);
+
+  return (
+    <>
+      {safeZoneVisible && compositionWidth > 0 && compositionHeight > 0 && (
+        <div
+          aria-label="Safe margin 90x70 guide"
+          className="pointer-events-none absolute z-40 border border-dashed border-amber-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)]"
+          style={{
+            left: safeLeft,
+            top: safeTop,
+            width: safeWidth,
+            height: safeHeight,
+          }}
+        >
+          <span className="absolute -top-4 left-1 rounded bg-amber-500/90 px-1.5 py-0.2 font-mono text-[9px] font-bold tracking-wider text-black uppercase">
+            SAFE 90×70 (1740×940)
+          </span>
+        </div>
+      )}
+      {backdropMode !== "default" && (
+        <button
+          type="button"
+          onClick={cycleBackdropMode}
+          className="pointer-events-auto absolute top-2 right-2 z-50 flex items-center gap-1.5 rounded-full border border-amber-400/50 bg-black/80 px-2.5 py-1 font-mono text-[10px] text-amber-200 hover:bg-black"
+          title="Click to cycle cutout halo inspection backdrop"
+        >
+          <span>Backdrop QC: {backdropMode.toUpperCase()}</span>
+        </button>
+      )}
+    </>
+  );
+}
 
 export interface PreviewOverlaysProps {
   shouldShowMotionPath: boolean;
@@ -32,7 +125,7 @@ export function PreviewOverlays({
   isGestureRecording,
   gestureOverlay,
 }: PreviewOverlaysProps) {
-  const { activeCompPath, previewIframeRef } = useStudioShellContext();
+  const { projectId, activeCompPath, previewIframeRef } = useStudioShellContext();
   const { captionEditMode, compositionLoading, isPlaying } = useStudioPlaybackContext();
   const compositionDimensions = useCompositionDimensions(previewIframeRef);
   const readOnly = usePreviewReadOnly();
@@ -132,6 +225,12 @@ export function PreviewOverlays({
     <>
       <TopologyLens iframeRef={previewIframeRef} activeCompositionPath={activeCompPath} />
       <GridOverlay />
+      <DocumentaryQcOverlay iframeRef={previewIframeRef} />
+      <CanvasCommentsOverlay
+        projectId={projectId}
+        activeCompPath={activeCompPath}
+        iframeRef={previewIframeRef}
+      />
       <ConnectedDomEditOverlay
         activeCompositionPath={activeCompPath}
         showHoverSelection={!previewCaptionEditMode && !compositionLoading && !isPlaying}

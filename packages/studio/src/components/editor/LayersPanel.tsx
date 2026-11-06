@@ -40,6 +40,8 @@ import { zReorderCoalesceKey } from "../../hooks/useElementLifecycleOps";
 import { useLayerReorderTimelineMirror } from "../nle/useCanvasZOrderTimelineMirror";
 import { runZLaneGesture } from "../nle/zLaneGesture";
 import { useLayerRevealOverride } from "./useLayerRevealOverride";
+import { LayerRowQuickActions } from "./LayerRowQuickActions";
+import { useOptionalNLEContext } from "../nle/NLEContext";
 
 // Rows this panel renders before it stops. A display budget, not a document limit.
 const LAYERS_PANEL_MAX_ROWS = 80;
@@ -144,6 +146,7 @@ export const LayersPanel = memo(function LayersPanel({ host }: { host?: LayersPa
   });
 
   const isMasterView = !activeCompPath || activeCompPath === "index.html";
+  const nle = useOptionalNLEContext();
 
   const livePreviewIframe = useLivePreviewIframe();
   const collectLayers = useCallback(() => {
@@ -524,12 +527,27 @@ export const LayersPanel = memo(function LayersPanel({ host }: { host?: LayersPa
               >
                 <KindIcon size={12} />
               </span>
-              <span className="min-w-0 flex-1 truncate text-[11px]">{layer.label}</span>
+              <span
+                className={`min-w-0 flex-1 truncate text-[11px] ${
+                  layer.element.hasAttribute("data-hidden") ? "line-through opacity-50" : ""
+                }`}
+              >
+                {layer.label}
+              </span>
               {hasChildren && (
                 <span className="text-[9px] tabular-nums text-panel-text-5">
                   {layer.childCount}
                 </span>
               )}
+              <LayerRowQuickActions
+                layer={layer}
+                allLayers={layers}
+                projectId={nle?.projectId}
+                activeCompPath={activeCompPath}
+                onReorder={handleReorder}
+                onRefreshLayers={collectLayers}
+                onReloadPreview={nle?.refreshPlayer}
+              />
             </div>
           );
         })}

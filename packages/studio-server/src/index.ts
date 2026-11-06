@@ -1,4 +1,11 @@
 export { createStudioApi } from "./createStudioApi.js";
+export {
+  registerAgentRoutes,
+  type AgentEngineId,
+  type AgentCliInfo,
+  type AgentModelOption,
+  type SkillEntry,
+} from "./routes/agents.js";
 export { MAX_UPLOAD_BYTES } from "./routes/files.js";
 export {
   createProjectSignature,

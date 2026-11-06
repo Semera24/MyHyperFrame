@@ -349,9 +349,38 @@ export function foldGsapMutationIntoHistory(
   );
 }
 
+function normalizeGsapTargetSelector(elementIdOrSelector: string): string {
+  if (
+    elementIdOrSelector.startsWith("#") ||
+    elementIdOrSelector.startsWith(".") ||
+    elementIdOrSelector.startsWith("[")
+  ) {
+    return elementIdOrSelector;
+  }
+  if (elementIdOrSelector.includes(":")) {
+    return `[data-hf-id="${elementIdOrSelector}"]`;
+  }
+  return `#${elementIdOrSelector}`;
+}
+
+export function resolveElementGsapTarget(element: {
+  domId?: string;
+  hfId?: string;
+  selector?: string;
+}): string | undefined {
+  if (element.domId) return element.domId;
+  if (element.selector) return element.selector;
+  if (element.hfId) return `[data-hf-id="${element.hfId}"]`;
+  return undefined;
+}
+
 export function shiftGsapMutation(elementId: string | undefined, delta: number) {
   if (delta === 0 || !elementId) return null;
-  return { type: "shift-positions", targetSelector: `#${elementId}`, delta };
+  return {
+    type: "shift-positions",
+    targetSelector: normalizeGsapTargetSelector(elementId),
+    delta,
+  };
 }
 
 export function scaleGsapMutation(
@@ -365,7 +394,7 @@ export function scaleGsapMutation(
   if (oldStart === newStart && oldDuration === newDuration) return null;
   return {
     type: "scale-positions",
-    targetSelector: `#${elementId}`,
+    targetSelector: normalizeGsapTargetSelector(elementId),
     oldStart,
     oldDuration,
     newStart,

@@ -128,6 +128,8 @@ function FlatFillFields({
           projectId={projectId}
           element={element}
           onSetHtmlAttribute={onSetHtmlAttribute}
+          onSetStyle={onSetStyle}
+          styles={styles}
           value={imageUrl}
           assets={assets}
           disabled={styleEditingDisabled}

@@ -1,0 +1,25 @@
+# The lip pass's own environment (main/lipPass.mjs): LivePortrait, torch on MPS, and MediaPipe's face mesh to measure it.
+# numpy and opencv match hf-media's lock. The lock lists every package and installs with --no-deps, so mediapipe comes
+# without jax, sounddevice and opencv-contrib, which its face mesh never loads (it does need matplotlib). Regenerate:
+#   MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements.in --generate-hashes --no-header \
+#     --python-platform aarch64-apple-darwin --python-version 3.12 -o locks/macos-arm64.txt
+#   then append `uv pip compile` of "mediapipe==0.10.14" with --no-deps and the same flags.
+numpy==2.5.3
+opencv-python-headless==4.14.0.94
+torch==2.14.1
+torchvision==0.29.1
+onnxruntime==1.31.0
+scipy==1.18.1
+scikit-image==0.26.0
+pykalman==0.11.2
+imageio==2.38.1
+imageio-ffmpeg==0.6.0
+pyyaml==6.0.3
+tyro==1.0.16
+rich==15.0.0
+tqdm==4.70.1
+matplotlib==3.11.2
+protobuf==4.25.9
+absl-py==2.5.1
+attrs==26.1.0
+flatbuffers==25.12.19

@@ -1,0 +1,79 @@
+{
+  "version": "1.0.0",
+  "archetypes": [
+    {
+      "id": "hero-split",
+      "name": "Template 1: Archival Hero & Schematic Split",
+      "archetype": "Character, Protagonist, Conflict & Comparison",
+      "description": "Grounded cutout character with breathing animation, high-impact headline, dark vignette wash, and 2-column comparative schematic cards.",
+      "bestFor": "Introducing a public figure, contrasting two eras, or explaining rival factions.",
+      "templateFile": "master-template-1-hero-split/template.html",
+      "defaultParams": {
+        "KICKER_TEXT": "THE TURNING POINT",
+        "HEADLINE_TEXT": "ALREADY A PUBLIC FIGURE",
+        "BG_IMAGE": "assets/EP02_BG_Manhattan.png",
+        "CHAR_IMAGE": "assets/EP02_CHAR_Trump_2004_Standing.png",
+        "CHAR_ALIGN": "right",
+        "COL1_TAG": "PRE-TURNING POINT",
+        "COL1_TITLE": "Guest Appearance",
+        "COL1_DESC": "One puts a person briefly on screen as an occasional participant.",
+        "COL2_TAG": "POST-TURNING POINT",
+        "COL2_TITLE": "Recurring Format",
+        "COL2_DESC": "The other builds an entire television format around their authority.",
+        "CALLOUT_TEXT": "A RECURRING STARRING ROLE",
+        "DURATION_SECONDS": "24.0",
+        "CUE_SCHEMATIC_SECONDS": "8.5",
+        "CUE_CALLOUT_SECONDS": "14.2"
+      }
+    },
+    {
+      "id": "map-route",
+      "name": "Template 2: Geopolitical Map & Tactical Trajectory",
+      "archetype": "Tactical Map, Routes, Waterways, Chokepoints",
+      "description": "Continuous subtle Ken Burns zoom, dual split tactical route maps, central question banner, and 3 sequential cue-timed options.",
+      "bestFor": "Explaining global trade routes, military choke points, canals, borders, or historical turning-point decisions.",
+      "templateFile": "master-template-2-map-route/template.html",
+      "defaultParams": {
+        "SOURCE_TAG": "Sources: U.S. Dept of State · SCA Archives",
+        "BG_CANVAS": "assets/EP04_BG_Opening_Closing_Map_Canvas.png",
+        "MAP_IMAGE_LEFT": "assets/EP04_MAP_Suez_Global_Route.svg",
+        "MAP_LABEL_LEFT": "SUEZ CANAL (1869)",
+        "MAP_IMAGE_RIGHT": "assets/EP04_MAP_Hormuz_Gulf_Route.svg",
+        "MAP_LABEL_RIGHT": "STRAIT OF HORMUZ",
+        "QUESTION_KICKER": "The Central Question",
+        "QUESTION_HEADLINE": "Which moment turned crisis into a turning point in world power?",
+        "OPTION_1_TEXT": "The Announcement?",
+        "OPTION_2_TEXT": "The Invasion?",
+        "OPTION_3_TEXT": "The Withdrawal?",
+        "DURATION_SECONDS": "20.0",
+        "CUE_OPT1_SECONDS": "8.5",
+        "CUE_OPT2_SECONDS": "10.2",
+        "CUE_OPT3_SECONDS": "11.8"
+      }
+    },
+    {
+      "id": "archival-ledger",
+      "name": "Template 3: Archival Document, Metric & Evidence",
+      "archetype": "Documents, Treaties, Financial Metrics, Evidence",
+      "description": "Archival document card, transformation metric flow (Before ➔ After), speech-timed glowing highlight pass, and historical attribution tag.",
+      "bestFor": "Inspecting financial data, treaty terms, nationalization decrees, bank reserves, or court documents.",
+      "templateFile": "master-template-3-archival-ledger/template.html",
+      "defaultParams": {
+        "SOURCE_ATTRIBUTION": "Sources: SCA Archives · Bank of International Settlements",
+        "BG_PLATE": "assets/EP04_BG_Egypt_Canal_Operations_1956.png",
+        "WITNESS_IMAGE": "assets/EP04_CHAR_Gamal_Abdel_Nasser_1956.png",
+        "DATE_BADGE": "26 JULY 1956",
+        "DOCUMENT_TITLE": "Nationalization of the Canal Company",
+        "DOCUMENT_SUMMARY": "The concession enterprise was transitioned from joint foreign ownership into sovereign state control.",
+        "METRIC_1_LABEL": "PRE-DECREE STATUS",
+        "METRIC_1_VALUE": "Joint Concession Enterprise",
+        "METRIC_2_LABEL": "POST-DECREE STATUS",
+        "METRIC_2_VALUE": "Sovereign State Control",
+        "HIGHLIGHT_QUOTE": "“The decision spoke directly to sovereignty and national economic independence.”",
+        "DURATION_SECONDS": "26.0",
+        "CUE_WITNESS_SECONDS": "5.5",
+        "CUE_HIGHLIGHT_SECONDS": "16.0"
+      }
+    }
+  ]
+}

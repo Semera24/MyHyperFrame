@@ -103,8 +103,7 @@ function normalize(edit: PlayheadEdit): Normalized | { reason: PlayheadEditRefus
     };
   }
   // The flat tween's ease becomes easeEach: a top-level ease would leave each segment power1.inOut.
-  const easeEach = anim.ease ?? edit.parsedEase;
-  if (!easeEach) return { reason: "unknown-ease" };
+  const easeEach = anim.ease ?? edit.parsedEase ?? "power1.out";
   const to = { percentage: 100, properties: { ...anim.properties } };
   if (anim.method === "to") return { keyframes: [to], easeEach };
   if (anim.method === "fromTo") {

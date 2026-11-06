@@ -8,6 +8,7 @@ export interface TimelineEditCapabilities {
 function isDeterministicTimelineWindow(input: {
   tag: string;
   kind?: "video" | "audio" | "image" | "element" | "composition";
+  duration?: number;
   compositionSrc?: string;
   playbackStartAttr?: "media-start" | "playback-start";
   sourceDuration?: number;
@@ -21,7 +22,29 @@ function isDeterministicTimelineWindow(input: {
   ) {
     return true;
   }
-  return ["video", "audio", "img"].includes(input.tag.toLowerCase());
+  if (input.duration != null && Number.isFinite(input.duration) && input.duration > 0) {
+    return true;
+  }
+  return [
+    "video",
+    "audio",
+    "img",
+    "div",
+    "svg",
+    "g",
+    "p",
+    "span",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+  ].includes(input.tag.toLowerCase());
 }
 
 export function hasPatchableTimelineTarget(input: {

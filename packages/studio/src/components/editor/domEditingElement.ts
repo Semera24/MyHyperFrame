@@ -104,6 +104,10 @@ export function isInspectableLayerElement(el: HTMLElement): boolean {
   const tagName = el.tagName.toLowerCase();
   if (DOM_LAYER_IGNORED_TAGS.has(tagName)) return false;
 
+  // Keep user-hidden (`data-hidden`) layers in the Layers tree so the user can
+  // toggle their Eye visibility icon back on from the Layers panel.
+  if (el.hasAttribute("data-hidden")) return true;
+
   const computed = el.ownerDocument.defaultView?.getComputedStyle(el);
   if (computed?.display === "none" || computed?.visibility === "hidden") return false;
 

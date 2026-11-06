@@ -245,6 +245,7 @@ export function mountTimelineClipDragGestureLifecycle({
   const commitResizePointerUp = (
     resize: ResizingClipState,
     groupSession: TimelineGroupResizeSession | null,
+    shiftKey?: boolean,
   ) => {
     if (!resize.started) return;
     suppressClickRef.current = true;
@@ -260,31 +261,71 @@ export function mountTimelineClipDragGestureLifecycle({
     if (!hasChanged) return;
 
     const resizeKey = resize.element.key ?? resize.element.id;
-    const revision = beginTimelineOptimisticGesture(updateElement, [resizeKey]);
+    const oldEnd = resize.element.start + resize.element.duration;
+    const newEnd = resize.previewStart + resize.previewDuration;
+    const endDelta = Math.round((newEnd - oldEnd) * 1000) / 1000;
+    const isSceneComp =
+      resize.element.kind === "composition" || Boolean(resize.element.compositionSrc);
+    const rippleFollowers =
+      shiftKey && isSceneComp && Math.abs(endDelta) > 0.001 && Boolean(onMoveElementsRef.current)
+        ? elementsRef.current.filter(
+            (el) =>
+              (el.key ?? el.id) !== resizeKey &&
+              (el.kind === "composition" || Boolean(el.compositionSrc)) &&
+              !el.hostClipId &&
+              el.start >= oldEnd - 0.05,
+          )
+        : [];
+    const affectedKeys = [resizeKey, ...rippleFollowers.map((el) => el.key ?? el.id)];
+    const revision = beginTimelineOptimisticGesture(updateElement, affectedKeys);
     updateElement(resizeKey, {
       start: resize.previewStart,
       duration: resize.previewDuration,
       playbackStart: resize.previewPlaybackStart,
     });
+    for (const follower of rippleFollowers) {
+      const fKey = follower.key ?? follower.id;
+      updateElement(fKey, {
+        start: Math.max(0, Math.round((follower.start + endDelta) * 1000) / 1000),
+      });
+    }
     Promise.resolve(
       onResizeElementRef.current?.(resize.element, {
         start: resize.previewStart,
         duration: resize.previewDuration,
         playbackStart: resize.previewPlaybackStart,
       }),
-    ).catch((error) => {
-      rollbackLatestTimelineOptimisticGesture(updateElement, revision, [
-        {
-          key: resizeKey,
-          updates: {
-            start: resize.element.start,
-            duration: resize.element.duration,
-            playbackStart: resize.element.playbackStart,
+    )
+      .then(() => {
+        if (rippleFollowers.length > 0 && onMoveElementsRef.current) {
+          return onMoveElementsRef.current(
+            rippleFollowers.map((follower) => ({
+              element: follower,
+              updates: {
+                start: Math.max(0, Math.round((follower.start + endDelta) * 1000) / 1000),
+                track: follower.track,
+              },
+            })),
+          );
+        }
+      })
+      .catch((error) => {
+        rollbackLatestTimelineOptimisticGesture(updateElement, revision, [
+          {
+            key: resizeKey,
+            updates: {
+              start: resize.element.start,
+              duration: resize.element.duration,
+              playbackStart: resize.element.playbackStart,
+            },
           },
-        },
-      ]);
-      console.error("[Timeline] Failed to persist clip resize", error);
-    });
+          ...rippleFollowers.map((follower) => ({
+            key: follower.key ?? follower.id,
+            updates: { start: follower.start },
+          })),
+        ]);
+        console.error("[Timeline] Failed to persist clip resize", error);
+      });
     unlinkAltEdited(resize);
   };
 
@@ -353,10 +394,10 @@ export function mountTimelineClipDragGestureLifecycle({
     return claimed;
   };
 
-  const commitClaimedGesture = (gesture: TimelineGestureCommit) => {
+  const commitClaimedGesture = (gesture: TimelineGestureCommit, shiftKey?: boolean) => {
     try {
       if (gesture.kind === "resize" && gesture.resize) {
-        commitResizePointerUp(gesture.resize, gesture.groupResize);
+        commitResizePointerUp(gesture.resize, gesture.groupResize, shiftKey);
       } else if (gesture.kind === "drag" && gesture.drag) {
         commitDragPointerUp(gesture.drag);
       }
@@ -379,7 +420,7 @@ export function mountTimelineClipDragGestureLifecycle({
     const claimed = claimActiveGesture(event);
     if (claimed === "ignored") return;
     if (claimed) {
-      commitClaimedGesture(claimed);
+      commitClaimedGesture(claimed, event.shiftKey);
       return;
     }
     const blocked = blockedClipRef.current;

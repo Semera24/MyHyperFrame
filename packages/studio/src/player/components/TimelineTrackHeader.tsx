@@ -6,7 +6,12 @@ import {
 } from "@hyperframes/core/audio-fx";
 import { classifyAudioName } from "@hyperframes/core/audio-carve";
 import { usePlayerStore, type TimelineElement } from "../store/playerStore";
-import { VisibilityButton, PlainTrackHeader } from "./TimelineTrackPlainHeader";
+import {
+  VisibilityButton,
+  PlainTrackHeader,
+  TrackDragGrip,
+  TrackOrderButtons,
+} from "./TimelineTrackPlainHeader";
 import type { TimelineEditCallbacks } from "./timelineCallbacks";
 import { useTimelineEditContextOptional } from "../../contexts/TimelineEditContext";
 import { useDomEditActionsContextOptional } from "../../contexts/DomEditContext";
@@ -81,6 +86,11 @@ interface TimelineTrackHeaderProps {
    *  hides the control rather than offering a button that cannot act. */
   onRemoveAutomationLane?: (target: string) => void;
   onSeek?: (time: number) => void;
+  canMoveTrackUp?: boolean;
+  canMoveTrackDown?: boolean;
+  onMoveTrackUp?: () => void;
+  onMoveTrackDown?: () => void;
+  onDragReorderTrack?: (fromTrackNumber: number, toTrackNumber: number) => void;
 }
 
 // fallow-ignore-next-line complexity
@@ -107,6 +117,11 @@ export function TimelineTrackHeader({
   onRemoveAutomationLane,
   onSeek,
   rovingTargetId = null,
+  canMoveTrackUp,
+  canMoveTrackDown,
+  onMoveTrackUp,
+  onMoveTrackDown,
+  onDragReorderTrack,
 }: TimelineTrackHeaderProps) {
   const clipPercentage = keyframeClip
     ? ((currentTime - keyframeClip.start) / keyframeClip.duration) * 100
@@ -272,6 +287,7 @@ export function TimelineTrackHeader({
     <div
       role="rowheader"
       aria-colindex={1}
+      data-timeline-track-num={!isAudioTrack ? trackNumber : undefined}
       className="sticky left-0 z-12 shrink-0"
       style={{
         width: showTrackLabel ? LABEL_COL_W : contentOrigin,
@@ -316,6 +332,26 @@ export function TimelineTrackHeader({
               isAudioTrack={isAudioTrack}
               isAudioOnly={isAudioOnly}
               onToggleTrackHidden={onToggleTrackHidden}
+              leading={
+                !isAudioTrack && showTrackLabel ? (
+                  <TrackDragGrip
+                    trackNumber={trackNumber}
+                    trackLabel={trackLabel}
+                    onDragReorderTrack={onDragReorderTrack}
+                  />
+                ) : undefined
+              }
+              orderButtons={
+                !isAudioTrack && showTrackLabel ? (
+                  <TrackOrderButtons
+                    trackLabel={trackLabel}
+                    canMoveUp={canMoveTrackUp}
+                    canMoveDown={canMoveTrackDown}
+                    onMoveUp={onMoveTrackUp}
+                    onMoveDown={onMoveTrackDown}
+                  />
+                ) : undefined
+              }
               // On the control line rather than a third row of its own.
               trailing={
                 <>
@@ -376,7 +412,25 @@ export function TimelineTrackHeader({
             columnWidth={showTrackLabel ? LABEL_COL_W : contentOrigin}
             lanesId={lanesId}
             onToggleClipExpanded={onToggleClipExpanded}
+            leading={
+              !isAudioTrack && showTrackLabel ? (
+                <TrackDragGrip
+                  trackNumber={trackNumber}
+                  trackLabel={laneOwnerName}
+                  onDragReorderTrack={onDragReorderTrack}
+                />
+              ) : undefined
+            }
           >
+            {!isAudioTrack && showTrackLabel && (
+              <TrackOrderButtons
+                trackLabel={laneOwnerName}
+                canMoveUp={canMoveTrackUp}
+                canMoveDown={canMoveTrackDown}
+                onMoveUp={onMoveTrackUp}
+                onMoveDown={onMoveTrackDown}
+              />
+            )}
             {/* The eye belongs to the LAYER, so it lives on the always-mounted
                 layer row exactly like a plain track's. Hanging it off a lane row
                 (hover-gated, and only while expanded) left a keyframed track with

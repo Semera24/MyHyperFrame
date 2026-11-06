@@ -391,8 +391,8 @@ export async function commitWholePathOffset(
     const endX = typeof toProps.x === "number" ? toProps.x : startX;
     const endY = typeof toProps.y === "number" ? toProps.y : startY;
     kfs = [
-      { percentage: 0, properties: { x: startX, y: startY } },
-      { percentage: 100, properties: { x: endX, y: endY } },
+      { percentage: 0, properties: { ...fromProps, x: startX, y: startY } },
+      { percentage: 100, properties: { ...toProps, x: endX, y: endY } },
     ];
   }
 

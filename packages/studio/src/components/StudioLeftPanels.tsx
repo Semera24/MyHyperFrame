@@ -24,6 +24,9 @@ interface StudioLeftPanelsProps {
   lintFindingsByFile?: Map<string, { count: number; messages: string[] }>;
   onAddAssetToTimeline?: (path: string) => void;
   onAddCompositionToTimeline?: (path: string) => void;
+  activeCompPath?: string | null;
+  reloadPreview?: () => void;
+  refreshFileTree?: () => void;
 }
 
 function PanelColumn({ footer, children }: { footer: ReactNode; children: ReactNode }) {
@@ -47,6 +50,9 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
   lintFindingsByFile,
   onAddAssetToTimeline,
   onAddCompositionToTimeline,
+  activeCompPath,
+  reloadPreview,
+  refreshFileTree,
 }: StudioLeftPanelsProps) {
   const { projectId, renderQueue, waitForPendingDomEditSaves } = useStudioShellContext();
   const {

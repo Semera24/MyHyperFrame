@@ -27,7 +27,28 @@ export function isHtmlElement(value: unknown): value is HTMLElement {
 export { parsePx } from "@hyperframes/core/editing";
 
 export function isTextBearingTag(tagName: string): boolean {
-  return ["div", "span", "p", "strong", "h1", "h2", "h3", "h4", "h5", "h6"].includes(tagName);
+  return [
+    "div",
+    "span",
+    "p",
+    "strong",
+    "em",
+    "b",
+    "i",
+    "small",
+    "label",
+    "a",
+    "li",
+    "blockquote",
+    "text",
+    "tspan",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+  ].includes(tagName);
 }
 
 export function isEditableTextLeaf(el: HTMLElement): boolean {

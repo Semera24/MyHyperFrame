@@ -1,0 +1,83 @@
+{
+  "provenance": {
+    "source": "heygen-com/experiment-framework PR #55249 (transcription accepts API keys) and its stack; live canary calls through the HyperFrames Desktop key proxy on 2026-10-07",
+    "checked_at": "2026-10-07",
+    "kind": "PR-and-live-call-derived structural contract; route hidden from public docs",
+    "notes": [
+      "Synchronous: transcription runs inside the POST; GET /v3/audio/transcriptions/{id} re-reads it.",
+      "Idempotency-Key is required (400 without it); a replay of the same key and body returns the same job without a new charge.",
+      "Auth: x-api-key (OAuth tokens get 403 api_key_required) with assets:write (create) / assets:read (read); 403 insufficient_api_key_scope otherwise. Charged to HeyGen API credits.",
+      "Response data: id, status, model, created_at, language, duration_seconds, text, segments[{speaker?, start, end, text, words[{word, start, end, speaker?}]}]. speaker appears when diarize is true.",
+      "Only the fields below were exercised; add others only after checking the current backend DTO.",
+      "With a Desktop-managed profile, the local proxy treats scribe-v2 as the compatible transcription operation and chooses HeyGen ASR for an internal API-key owner when its existing backend access gate allows it. A disabled-endpoint 404 selects Scribe v2 before inference; other inference failures do not switch providers.",
+      "Read the returned model/engine and the job record model_actual to identify what ran. Direct HeyGen API calls retain the native Scribe contract. URL inputs and audio outside the ASR conversion limits stay on Scribe."
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["model", "audio"],
+    "properties": {
+      "model": {
+        "type": "string",
+        "enum": ["scribe-v2"]
+      },
+      "audio": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "url"],
+            "properties": {
+              "type": {
+                "const": "url"
+              },
+              "url": {
+                "type": "string",
+                "description": "Publicly accessible HTTPS URL"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "asset_id"],
+            "properties": {
+              "type": {
+                "const": "asset_id"
+              },
+              "asset_id": {
+                "type": "string",
+                "description": "HeyGen asset ID from /v3/assets"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "media_type", "data"],
+            "properties": {
+              "type": {
+                "const": "base64"
+              },
+              "media_type": {
+                "type": "string"
+              },
+              "data": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "language": {
+        "type": "string",
+        "description": "ISO 639-1 or 639-3 code of the spoken language; left out, the language is detected"
+      },
+      "diarize": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}

@@ -1,0 +1,256 @@
+{
+  "provenance": {
+    "source": "https://developers.heygen.com/docs/models/heygen-video",
+    "checked_at": "2026-10-07",
+    "retrieved_text_sha256": "c59fbfc244db4ff098059b2340e61fdfa9229020270baaa973cd92d690e7fcb2",
+    "kind": "documentation-derived structural contract; absent from current external-api OpenAPI snapshot",
+    "notes": [
+      "Mode-dependent validation also occurs in generation.py; service validates assets and account access.",
+      "No default is inserted by this adapter. Native audio is preserved.",
+      "Idempotency-Key is documented for this endpoint for 24 hours; no automatic retry is performed.",
+      "2k bills at 3x the 768p rate and renders 16:9 (2688x1536) or 9:16 (1536x2688); text_to_video and reference_to_video need one of those aspect ratios set explicitly, because adaptive resolves at 480p and 768p only. image_to_video follows the first frame."
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": ["model", "prompt"],
+    "additionalProperties": false,
+    "properties": {
+      "model": {
+        "type": "string",
+        "enum": ["heygen-video-1"]
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["text_to_video", "image_to_video", "reference_to_video"]
+      },
+      "prompt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32000
+      },
+      "duration": {
+        "type": "integer",
+        "minimum": 5,
+        "maximum": 15
+      },
+      "resolution": {
+        "enum": ["480p", "768p", "2k"]
+      },
+      "prompt_enhancement": {
+        "enum": ["turbo", "quality", "disabled"]
+      },
+      "aspect_ratio": {
+        "enum": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"]
+      },
+      "seed": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295
+      },
+      "callback_url": {
+        "type": "string"
+      },
+      "callback_id": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "image": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "url"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "url"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "asset_id"
+              },
+              "asset_id": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "asset_id"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "base64"
+              },
+              "media_type": {
+                "type": "string"
+              },
+              "data": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "media_type", "data"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "reference_images": {
+        "type": "array",
+        "maxItems": 9,
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "url"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "url"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "asset_id"
+                },
+                "asset_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "asset_id"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "base64"
+                },
+                "media_type": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "media_type", "data"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "reference_videos": {
+        "type": "array",
+        "maxItems": 3,
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "url"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "url"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "asset_id"
+                },
+                "asset_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "asset_id"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "base64"
+                },
+                "media_type": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "media_type", "data"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "reference_audio": {
+        "type": "array",
+        "maxItems": 3,
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "url"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "url"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "asset_id"
+                },
+                "asset_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "asset_id"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "base64"
+                },
+                "media_type": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "media_type", "data"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -101,10 +101,18 @@ import {
   relinkSplitHalvesInHtml,
   wrapElementsInHtml,
   unwrapElementsFromHtml,
+  insertElementInHtml,
+  unbundleContainerInHtml,
+  groupElementsInHtml,
+  reorderTracksInHtml,
   isHTMLElement,
   type PatchOperation,
   type ElementRebase,
   type SplitRefusal,
+  type InsertElementRequest,
+  type UnbundleContainerRequest,
+  type GroupElementsRequest,
+  type ReorderTracksRequest,
 } from "../helpers/sourceMutation.js";
 import { ensureStudioFontFaceCss, isStudioFontFaceCss } from "../helpers/studioFontFace.js";
 import { parseHTML } from "linkedom";
@@ -3655,6 +3663,177 @@ export function registerFileRoutes(api: Hono, adapter: StudioApiAdapter): void {
       return c.json({ exists: body.targets.map(() => false) });
     }
     return c.json({ exists: probeElementsInSource(content, body.targets) });
+  });
+
+  api.post("/projects/:id/file-mutations/insert-element/*", async (c) => {
+    const ctx = await resolveFileMutationContext(c, adapter, "insert-element");
+    if ("error" in ctx) return ctx.error;
+
+    const body = (await c.req.json().catch(() => null)) as InsertElementRequest | null;
+    if (
+      !body ||
+      (body.kind !== "text" &&
+        body.kind !== "image" &&
+        body.kind !== "group" &&
+        body.kind !== "preset")
+    ) {
+      return c.json({ error: "kind ('text' | 'image' | 'group' | 'preset') is required" }, 400);
+    }
+
+    let originalContent: string;
+    try {
+      originalContent = readFileSync(ctx.absPath, "utf-8");
+    } catch {
+      return c.json({ error: "not found" }, 404);
+    }
+
+    const result = insertElementInHtml(originalContent, body);
+    if (!result.inserted) {
+      return c.json({ ok: false, changed: false, content: originalContent, path: ctx.filePath });
+    }
+    const stamped = ensureHfIds(result.html);
+    const mutationResult = writeMutationResult(
+      c,
+      ctx.project.dir,
+      ctx.filePath,
+      ctx.absPath,
+      stamped,
+      originalContent,
+    );
+    if (mutationResult instanceof Response) return mutationResult;
+    const { backupPath } = mutationResult;
+    return c.json({
+      ok: true,
+      changed: true,
+      elementId: result.elementId,
+      hfId: result.hfId,
+      content: stamped,
+      path: ctx.filePath,
+      backupPath,
+    });
+  });
+
+  api.post("/projects/:id/file-mutations/unbundle-container/*", async (c) => {
+    const ctx = await resolveFileMutationContext(c, adapter, "unbundle-container");
+    if ("error" in ctx) return ctx.error;
+
+    const body = (await c.req.json().catch(() => null)) as UnbundleContainerRequest | null;
+    if (!body || !Array.isArray(body.children) || body.children.length === 0) {
+      return c.json({ error: "children array required" }, 400);
+    }
+
+    let originalContent: string;
+    try {
+      originalContent = readFileSync(ctx.absPath, "utf-8");
+    } catch {
+      return c.json({ error: "not found" }, 404);
+    }
+
+    const result = unbundleContainerInHtml(originalContent, body);
+    if (!result.unbundled) {
+      return c.json({ ok: false, changed: false, content: originalContent, path: ctx.filePath });
+    }
+    const stamped = ensureHfIds(result.html);
+    const mutationResult = writeMutationResult(
+      c,
+      ctx.project.dir,
+      ctx.filePath,
+      ctx.absPath,
+      stamped,
+      originalContent,
+    );
+    if (mutationResult instanceof Response) return mutationResult;
+    const { backupPath } = mutationResult;
+    return c.json({
+      ok: true,
+      changed: true,
+      childIds: result.childIds,
+      content: stamped,
+      path: ctx.filePath,
+      backupPath,
+    });
+  });
+
+  api.post("/projects/:id/file-mutations/group-elements/*", async (c) => {
+    const ctx = await resolveFileMutationContext(c, adapter, "group-elements");
+    if ("error" in ctx) return ctx.error;
+
+    const body = (await c.req.json().catch(() => null)) as GroupElementsRequest | null;
+    if (!body || !Array.isArray(body.members) || body.members.length === 0 || !body.bbox) {
+      return c.json({ error: "members and bbox are required" }, 400);
+    }
+
+    let originalContent: string;
+    try {
+      originalContent = readFileSync(ctx.absPath, "utf-8");
+    } catch {
+      return c.json({ error: "not found" }, 404);
+    }
+
+    const result = groupElementsInHtml(originalContent, body);
+    if (!result.grouped) {
+      return c.json({ ok: false, changed: false, content: originalContent, path: ctx.filePath });
+    }
+    const stamped = ensureHfIds(result.html);
+    const mutationResult = writeMutationResult(
+      c,
+      ctx.project.dir,
+      ctx.filePath,
+      ctx.absPath,
+      stamped,
+      originalContent,
+    );
+    if (mutationResult instanceof Response) return mutationResult;
+    const { backupPath } = mutationResult;
+    return c.json({
+      ok: true,
+      changed: true,
+      groupId: result.groupId,
+      hfId: result.hfId,
+      content: stamped,
+      path: ctx.filePath,
+      backupPath,
+    });
+  });
+
+  api.post("/projects/:id/file-mutations/reorder-tracks/*", async (c) => {
+    const ctx = await resolveFileMutationContext(c, adapter, "reorder-tracks");
+    if ("error" in ctx) return ctx.error;
+
+    const body = (await c.req.json().catch(() => null)) as ReorderTracksRequest | null;
+    if (!body || !Array.isArray(body.entries) || body.entries.length === 0) {
+      return c.json({ error: "entries array required" }, 400);
+    }
+
+    let originalContent: string;
+    try {
+      originalContent = readFileSync(ctx.absPath, "utf-8");
+    } catch {
+      return c.json({ error: "not found" }, 404);
+    }
+
+    const result = reorderTracksInHtml(originalContent, body);
+    if (!result.changed) {
+      return c.json({ ok: false, changed: false, content: originalContent, path: ctx.filePath });
+    }
+    const stamped = ensureHfIds(result.html);
+    const mutationResult = writeMutationResult(
+      c,
+      ctx.project.dir,
+      ctx.filePath,
+      ctx.absPath,
+      stamped,
+      originalContent,
+    );
+    if (mutationResult instanceof Response) return mutationResult;
+    const { backupPath } = mutationResult;
+    return c.json({
+      ok: true,
+      changed: true,
+      content: stamped,
+      path: ctx.filePath,
+      backupPath,
+    });
   });
 
   // ── Rename / Move ──

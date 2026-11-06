@@ -9,6 +9,7 @@ import { RenderQueuePanel } from "./renders/RenderQueuePanel";
 import { SlideshowPanel } from "./panels/SlideshowPanel";
 import { VariablesPanel } from "./panels/VariablesPanel";
 import { MotionBlurPanel } from "./panels/MotionBlurPanel";
+import { AgentAssistantPanel } from "./panels/AgentAssistantPanel";
 import { Dock } from "./dock/Dock";
 import { useDockLayoutStore } from "./dock/dockLayoutStore";
 import type { RenderJob } from "./renders/useRenderQueue";
@@ -279,14 +280,32 @@ export const StudioRightPanels = memo(function StudioRightPanels({
         onClose={onCloseBlockParams ?? (() => {})}
       />
     );
+  } else if (!domEditSelection && domEditGroupSelections.length === 0) {
+    designBody = (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden border-b border-panel-border">
+          <LayersPanel />
+        </div>
+        <div className="max-h-[180px] shrink-0 overflow-y-auto">{propertyPanel}</div>
+      </div>
+    );
   }
 
   return (
     <>
-      <Dock.Panel id="design">{designBody}</Dock.Panel>
       <Dock.Panel id="layers">
         <LayersPanel />
       </Dock.Panel>
+      <Dock.Panel id="assistant" title="🤖 Assistant">
+        <AgentAssistantPanel
+          projectId={projectId}
+          activeCompPath={activeCompPath}
+          selectedElementId={domEditSelection?.id || domEditSelection?.hfId || null}
+          reloadPreview={reloadPreview}
+          refreshFileTree={refreshFileTree}
+        />
+      </Dock.Panel>
+      <Dock.Panel id="design">{designBody}</Dock.Panel>
       <Dock.Panel
         id="renders"
         title={renderJobs.length > 0 ? `Renders (${renderJobs.length})` : undefined}

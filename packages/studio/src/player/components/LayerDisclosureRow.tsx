@@ -61,6 +61,7 @@ export function LayerDisclosureRow({
   columnWidth,
   lanesId,
   onToggleClipExpanded,
+  leading,
   children,
 }: {
   /** What this row is called. The active clip's own name when it is alone on the
@@ -79,12 +80,13 @@ export function LayerDisclosureRow({
    *  reference should land on. */
   lanesId: string;
   onToggleClipExpanded: () => void;
+  leading?: React.ReactNode;
   /** Trailing controls that act on the LAYER (the visibility eye), not on a lane. */
   children?: React.ReactNode;
 }) {
   return (
     <div
-      className="absolute left-0 top-0 flex items-center gap-1.5 overflow-hidden px-1.5 text-[11px]"
+      className="absolute left-0 top-0 flex items-center gap-1 overflow-hidden px-1.5 text-[11px]"
       style={{
         width: columnWidth,
         height: TRACK_H,
@@ -92,6 +94,7 @@ export function LayerDisclosureRow({
         background: gutterBackground,
       }}
     >
+      {leading}
       {/* Decorative: the disclosure button above already names the row's keyframe
           state, and aria-label on a plain span is not exposed reliably anyway. */}
       <span

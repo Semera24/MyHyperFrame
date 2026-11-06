@@ -484,7 +484,7 @@ export function collectRuntimeTimelinePayload(params: {
       label: buildTimelineClipLabel(node, kind, clips.length),
       start,
       duration,
-      track: parseAuthoredTrack(node, i),
+      track: parseAuthoredTrack(node, isNestedHost ? 1 : i),
       zIndex: readInlineZIndex(node),
       stackingContextId: resolveCssStackingContextId(node, stackingByParent),
       kind,
@@ -523,116 +523,330 @@ export function collectRuntimeTimelinePayload(params: {
     for (const clip of parkedClips) addClip(clip);
   }
   // ── GSAP introspection ──────────────────────────────────────────────────
-  // Discover elements animated by GSAP that weren't picked up by the DOM query
-  // (e.g. scene divs controlled purely via opacity/display tweens).
-  // Introspect the master timeline's tweens to find their targets and time ranges.
-  // ── GSAP introspection ──────────────────────────────────────────────────
-  // Discover scene-level elements animated by GSAP that weren't picked up by
-  // the DOM query. Introspect the master timeline's tweens, resolve absolute
-  // time ranges, and bubble child tween ranges up to their nearest scene-level
-  // ancestor (direct child of root with an id).
+  // Discover scene and child layers animated by GSAP (or static visual layers
+  // inside compositions) across the root composition and all mounted
+  // sub-composition hosts.
   const gsapClipIds = new Set(clips.map((c) => c.id));
   const rootCompositionIdForGsap = root?.getAttribute("data-composition-id") ?? null;
-  const masterTimeline = rootCompositionIdForGsap
-    ? (timelineRegistry[rootCompositionIdForGsap] ?? null)
-    : null;
-  if (masterTimeline && root) {
+  const gsapHosts = compositionNodes.length > 0 ? compositionNodes : root ? [root] : [];
+  let nextGsapTrack = clips.length > 0 ? Math.max(...clips.map((c) => c.track)) + 1 : 0;
+
+  for (const compHost of gsapHosts) {
+    const compId = compHost.getAttribute("data-composition-id") ?? null;
+    const compTimeline = compId ? (timelineRegistry[compId] ?? null) : null;
+    if (!compTimeline) continue;
+    const isRootHost = compHost === root;
+    const hostStart = isRootHost
+      ? rootCompositionStart
+      : startResolver.resolveStartForElement(compHost, 0);
+    const hostDuration = isRootHost
+      ? rootCompositionDuration
+      : (parseElementDurationAttr(compHost) ??
+        resolveTimelineDurationSeconds(compId) ??
+        rootCompositionDuration);
+
     type GsapTween = {
       targets?: () => Element[];
       startTime?: () => number;
       duration?: () => number;
       parent?: GsapTween;
+      vars?: Record<string, unknown>;
     };
-    const tlWithChildren = masterTimeline as typeof masterTimeline & {
+    const tlWithChildren = compTimeline as typeof compTimeline & {
       getChildren?: (nested: boolean, tweens: boolean, timelines: boolean) => GsapTween[];
     };
     if (typeof tlWithChildren.getChildren === "function") {
       try {
         const tweens = tlWithChildren.getChildren(true, true, false) ?? [];
-        // Build a set of direct children of root that have an id — these are
-        // scene-level containers. Tween ranges on their descendants get bubbled
-        // up to expand the scene's time range.
-        const sceneElements = new Map<Element, { id: string; start: number; end: number }>();
-        for (const child of root.children) {
-          const childEl = child as HTMLElement;
-          if (!childEl.id) continue;
-          const tag = childEl.tagName.toLowerCase();
-          if (tag === "script" || tag === "style" || tag === "link") continue;
-          sceneElements.set(childEl, { id: childEl.id, start: Infinity, end: -Infinity });
-        }
-        // Find the scene-level ancestor for a given element
-        const findSceneAncestor = (el: Element): Element | null => {
-          let cursor: Element | null = el;
-          while (cursor) {
-            if (sceneElements.has(cursor)) return cursor;
-            if (cursor === root) return null;
-            cursor = cursor.parentElement;
+        const directTweenTargets = new Set<Element>();
+        for (const tween of tweens) {
+          if (typeof tween.targets !== "function") continue;
+          for (const target of tween.targets()) {
+            if (isElementNode(target) && compHost.contains(target) && target !== compHost) {
+              directTweenTargets.add(target);
+            }
           }
-          return null;
+        }
+
+        type SceneElementRange = {
+          id: string;
+          start: number;
+          end: number;
+          hasRealVars: boolean;
+          hasExitTween: boolean;
+          hasDirectTween: boolean;
         };
-        // Walk all tweens and accumulate time ranges per scene element
+        const sceneElements = new Map<Element, SceneElementRange>();
+        const INLINE_TEXT_TAGS = new Set([
+          "span",
+          "strong",
+          "em",
+          "b",
+          "i",
+          "br",
+          "small",
+          "sub",
+          "sup",
+        ]);
+        const hasDirectTextNode = (el: Element): boolean => {
+          for (const node of Array.from(el.childNodes)) {
+            if (node.nodeType === 3 && node.textContent && node.textContent.trim().length > 0) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        const collectSceneTargets = (container: Element) => {
+          for (const child of Array.from(container.children)) {
+            const childEl = child as HTMLElement;
+            if (childEl !== compHost && childEl.hasAttribute("data-composition-id")) {
+              continue;
+            }
+            const tag = childEl.tagName.toLowerCase();
+            if (
+              tag === "script" ||
+              tag === "style" ||
+              tag === "link" ||
+              tag === "meta" ||
+              tag === "defs" ||
+              tag === "template" ||
+              tag === "noscript" ||
+              tag === "audio"
+            ) {
+              continue;
+            }
+            if (
+              childEl.classList?.contains("wash-dark") ||
+              childEl.classList?.contains("wash-vignette")
+            ) {
+              continue;
+            }
+            const isInlineTag = INLINE_TEXT_TAGS.has(tag);
+            const isDirectTarget = directTweenTargets.has(childEl);
+            if (isInlineTag && !isDirectTarget && !childEl.id) {
+              continue;
+            }
+            const hfId = childEl.getAttribute("data-hf-id");
+            const elemId = childEl.id || hfId || "";
+            const isMediaOrSvg = tag === "img" || tag === "svg" || tag === "video";
+            const isLeafText =
+              Boolean(hfId) &&
+              hasDirectTextNode(childEl) &&
+              Array.from(childEl.children).every((c) =>
+                INLINE_TEXT_TAGS.has(c.tagName.toLowerCase()),
+              );
+
+            if (
+              elemId &&
+              (Boolean(childEl.id) || isDirectTarget || isMediaOrSvg || isLeafText) &&
+              !sceneElements.has(childEl)
+            ) {
+              sceneElements.set(childEl, {
+                id: elemId,
+                start: Infinity,
+                end: -Infinity,
+                hasRealVars: false,
+                hasExitTween: false,
+                hasDirectTween: false,
+              });
+            }
+
+            if (tag !== "svg" && childEl.children.length > 0) {
+              collectSceneTargets(childEl);
+            }
+          }
+        };
+        collectSceneTargets(compHost);
+
+        // Walk all tweens and accumulate time ranges on targets and their scene ancestors
         for (const tween of tweens) {
           if (typeof tween.targets !== "function") continue;
           if (typeof tween.startTime !== "function" || typeof tween.duration !== "function")
             continue;
           let tweenStart = tween.startTime();
           let parent = tween.parent;
-          while (parent && parent !== masterTimeline && typeof parent.startTime === "function") {
+          while (parent && parent !== compTimeline && typeof parent.startTime === "function") {
             tweenStart += parent.startTime();
             parent = parent.parent;
           }
-          const tweenEnd = tweenStart + tween.duration();
+          const tweenDur = tween.duration();
+          const tweenEnd = tweenStart + tweenDur;
           if (!Number.isFinite(tweenStart) || !Number.isFinite(tweenEnd)) continue;
+
+          const vars = tween.vars as Record<string, unknown> | undefined;
+          const hasVarsObj = vars != null && typeof vars === "object";
+          const isInitialZeroHide =
+            hasVarsObj &&
+            tweenDur === 0 &&
+            tweenStart === 0 &&
+            !vars.runBackwards &&
+            (vars.opacity === 0 || vars.autoAlpha === 0 || vars.display === "none");
+          if (isInitialZeroHide) continue;
+
+          const isExitVars =
+            hasVarsObj &&
+            !vars.runBackwards &&
+            (vars.opacity === 0 ||
+              vars.autoAlpha === 0 ||
+              vars.display === "none" ||
+              vars.visibility === "hidden");
+
           for (const target of tween.targets()) {
-            if (!isElementNode(target)) continue;
-            // Bubble up to the scene-level ancestor
-            const scene = findSceneAncestor(target);
-            if (!scene) continue;
-            const range = sceneElements.get(scene);
-            if (!range) continue;
-            range.start = Math.min(range.start, tweenStart);
-            range.end = Math.max(range.end, tweenEnd);
+            if (!isElementNode(target) || !compHost.contains(target) || target === compHost) {
+              continue;
+            }
+            let cursor: Element | null = target;
+            while (cursor && cursor !== compHost) {
+              const range = sceneElements.get(cursor);
+              if (range) {
+                if (cursor === target) {
+                  range.hasDirectTween = true;
+                  if (hasVarsObj) range.hasRealVars = true;
+                  if (
+                    isExitVars &&
+                    (range.start < Infinity ? tweenStart >= range.start : tweenStart > 0)
+                  ) {
+                    range.hasExitTween = true;
+                  }
+                }
+                range.start = Math.min(range.start, tweenStart);
+                range.end = Math.max(range.end, tweenEnd);
+              }
+              cursor = cursor.parentElement;
+            }
           }
         }
-        // Create clips for scene elements that have tween ranges
-        const gsapTrack = clips.length > 0 ? Math.max(...clips.map((c) => c.track)) + 1 : 0;
+
+        // Extend entrance-only real GSAP tweens to the end of the composition window (Bug C)
+        for (const [, range] of sceneElements) {
+          if (range.start === Infinity || range.end === -Infinity) continue;
+          if (
+            range.hasRealVars &&
+            !range.hasExitTween &&
+            hostDuration != null &&
+            Number.isFinite(hostDuration) &&
+            hostDuration > range.end
+          ) {
+            range.end = Math.max(range.end, hostDuration);
+          }
+        }
+
+        // Inherit parent visibility window for untweened children inside tweened containers,
+        // or surface static visual assets/labels spanning the composition window (Bug D)
+        for (const [element, range] of sceneElements) {
+          if (range.start !== Infinity && range.end !== -Infinity) continue;
+          let anc = element.parentElement;
+          while (anc && anc !== compHost) {
+            const ancRange = sceneElements.get(anc);
+            if (ancRange && ancRange.start !== Infinity && ancRange.end !== -Infinity) {
+              range.start = ancRange.start;
+              range.end = ancRange.end;
+              break;
+            }
+            anc = anc.parentElement;
+          }
+          if (
+            (range.start === Infinity || range.end === -Infinity) &&
+            hostDuration != null &&
+            hostDuration > 0
+          ) {
+            const el = element as HTMLElement;
+            const tag = el.tagName.toLowerCase();
+            const isVisualAsset = tag === "img" || tag === "svg" || tag === "video";
+            const isHFTextOrCard = el.hasAttribute("data-hf-id") && Boolean(el.textContent?.trim());
+            if (isVisualAsset || isHFTextOrCard) {
+              const computed = window.getComputedStyle(el);
+              if (
+                computed.display !== "none" &&
+                computed.visibility !== "hidden" &&
+                computed.opacity !== "0"
+              ) {
+                range.start = 0;
+                range.end = hostDuration;
+              }
+            }
+          }
+        }
+
+        // Create or refine clips for discovered scene elements (Bug A & Bug B)
         for (const [element, range] of sceneElements) {
           if (range.start === Infinity || range.end === -Infinity) continue;
           const el = element as HTMLElement;
-          if (gsapClipIds.has(el.id)) continue;
-          const duration = Math.max(0, range.end - range.start);
-          if (duration <= 0) continue;
-          const clampedDuration = clampDurationToRootWindow(range.start, duration);
+          const clipId = el.id || range.id;
+          if (!clipId) continue;
+          const globalStart = hostStart + range.start;
+          const localDuration = Math.max(0, range.end - range.start);
+          if (localDuration <= 0) continue;
+          const maxHostRemaining =
+            hostDuration != null && Number.isFinite(hostDuration)
+              ? Math.max(0, hostDuration - range.start)
+              : localDuration;
+          const clampedDuration = clampDurationToRootWindow(
+            globalStart,
+            Math.min(localDuration, maxHostRemaining),
+          );
           if (clampedDuration <= 0) continue;
-          maxEnd = Math.max(maxEnd, range.start + clampedDuration);
+
+          if (gsapClipIds.has(clipId)) {
+            if (!el.hasAttribute("data-start")) {
+              const existing = clips.find((c) => c.id === clipId);
+              if (existing) {
+                existing.start = globalStart;
+                existing.duration = clampedDuration;
+              }
+            }
+            continue;
+          }
+
+          maxEnd = Math.max(maxEnd, globalStart + clampedDuration);
+          const tag = el.tagName.toLowerCase();
+          const kind: RuntimeTimelineClip["kind"] =
+            tag === "video"
+              ? "video"
+              : tag === "audio"
+                ? "audio"
+                : tag === "img"
+                  ? "image"
+                  : "element";
+          const compositionContext = resolveNearestCompositionContext(el, root);
+          const fallbackLabel = el.id
+            ? el.id
+            : (textPreview(el) ?? filenameFromAssetUrl(resolveNodeAssetUrl(el)) ?? clipId);
           clips.push({
-            id: el.id,
+            id: clipId,
             label:
               el.getAttribute("data-timeline-label") ??
               el.getAttribute("data-label") ??
               el.getAttribute("aria-label") ??
-              el.id,
-            start: range.start,
+              fallbackLabel,
+            start: globalStart,
             duration: clampedDuration,
-            track: parseAuthoredTrack(el, gsapTrack),
+            track: parseAuthoredTrack(el, nextGsapTrack++),
             zIndex: readInlineZIndex(el),
             stackingContextId: resolveCssStackingContextId(el, stackingByParent),
-            kind: "element",
-            tagName: el.tagName.toLowerCase(),
+            kind,
+            tagName: tag,
             compositionId: el.getAttribute("data-composition-id"),
-            compositionAncestors: rootCompositionIdForGsap ? [rootCompositionIdForGsap] : [],
-            parentCompositionId: rootCompositionIdForGsap,
+            compositionAncestors:
+              compositionContext.compositionAncestors.length > 0
+                ? compositionContext.compositionAncestors
+                : compId
+                  ? [compId]
+                  : [],
+            parentCompositionId:
+              compositionContext.parentCompositionId ?? (isRootHost ? null : compId),
             nodePath: null,
             compositionSrc: null,
             playbackStart: readMediaStart(el),
             playbackRate: readElementPlaybackRate(el),
-            assetUrl: null,
+            assetUrl: resolveNodeAssetUrl(el),
             timelineRole: el.getAttribute("data-timeline-role"),
             timelineLabel: el.getAttribute("data-timeline-label"),
             timelineGroup: el.getAttribute("data-timeline-group"),
             timelinePriority: parseNum(el.getAttribute("data-timeline-priority")),
           });
-          gsapClipIds.add(el.id);
+          gsapClipIds.add(clipId);
         }
       } catch (err) {
         // GSAP introspection is best-effort — don't break timeline if it fails

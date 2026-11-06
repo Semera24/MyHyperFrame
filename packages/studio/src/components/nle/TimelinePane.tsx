@@ -90,7 +90,7 @@ export function TimelinePane({
       aria-disabled={timelineDisabled || undefined}
     >
       <div
-        className="flex flex-col flex-1 min-h-0 overflow-hidden"
+        className="flex flex-col flex-1 min-h-0"
         onDoubleClick={(e) => {
           if ((e.target as HTMLElement).closest("[data-clip]")) return;
           if (timelineDisabled) return;
@@ -99,8 +99,8 @@ export function TimelinePane({
           }
         }}
       >
-        <div className="shrink-0">{timelineToolbar}</div>
-        <div className="flex min-h-0 flex-1">
+        <div className="shrink-0 relative z-40">{timelineToolbar}</div>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="min-w-0 flex-1">
             <Timeline
               sessionEpoch={timelineSessionEpoch}

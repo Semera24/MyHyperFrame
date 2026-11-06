@@ -173,8 +173,18 @@ export function useTimelineSyncCallbacks({
 
       usePlayerStore.getState().setClipManifest(data.clips);
 
-      // Show root-level clips: no parentCompositionId, OR parent is a "phantom wrapper"
-      const clipCompositionIds = new Set(data.clips.map((c) => c.compositionId).filter(Boolean));
+      // On the Master composition (where sub-composition scene mounts S01..S09 are
+      // present in `data.clips` with `kind === "composition"`), keep the Master
+      // timeline clean by showing only top-level clips (S01..S09 on 1 row +
+      // Scene Transition + Narration). When the user double-clicks a scene to
+      // drill into `compositions/s01.html`..`s09.html`, `clipCompositionIds` is
+      // empty and all unbundled child layers of that scene appear on individual
+      // multi-track rows.
+      const clipCompositionIds = new Set(
+        data.clips
+          .filter((clip) => clip.kind === "composition")
+          .flatMap((clip) => [clip.id, clip.compositionId].filter((v): v is string => Boolean(v))),
+      );
       const filtered = data.clips.filter(
         (clip) => !clip.parentCompositionId || !clipCompositionIds.has(clip.parentCompositionId),
       );

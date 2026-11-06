@@ -1,0 +1,208 @@
+<template>
+  <div data-hf-id="hf-root" id="root" data-composition-id="{{SCENE_ID}}" data-width="1920" data-height="1080">
+    <style>
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0B141C;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      /* Backdrop Plate */
+      #{{SCENE_ID}}-bg-stage {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        z-index: 1;
+      }
+      #{{SCENE_ID}}-bg-plate {
+        position: absolute;
+        left: -50px;
+        top: -30px;
+        width: 2020px;
+        height: 1140px;
+        object-fit: cover;
+        transform-origin: 50% 50%;
+        will-change: transform;
+      }
+
+      /* Vignette Gradient Overlay */
+      #{{SCENE_ID}}-vignette {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to right, rgba(11,20,28,0.92) 0%, rgba(11,20,28,0.72) 48%, rgba(11,20,28,0.15) 100%);
+        z-index: 2;
+      }
+
+      /* Character Cutout */
+      #{{SCENE_ID}}-char-cutout {
+        position: absolute;
+        {{CHAR_ALIGN}}: 120px;
+        bottom: 0px;
+        height: 960px;
+        width: auto;
+        object-fit: contain;
+        z-index: 5;
+        will-change: transform, opacity;
+      }
+
+      /* Typography Header Card */
+      #{{SCENE_ID}}-headline-card {
+        position: absolute;
+        left: 90px;
+        top: 90px;
+        width: 820px;
+        opacity: 0;
+        z-index: 10;
+      }
+      #{{SCENE_ID}}-kicker {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        color: #C49A44;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      #{{SCENE_ID}}-headline-text {
+        font-size: 52px;
+        font-weight: 900;
+        line-height: 1.15;
+        color: #FFFFFF;
+        letter-spacing: 0.02em;
+      }
+
+      /* 2-Column Comparative Schematic */
+      #{{SCENE_ID}}-schematic-stage {
+        position: absolute;
+        left: 90px;
+        top: 320px;
+        width: 840px;
+        height: 480px;
+        z-index: 10;
+        opacity: 0;
+      }
+
+      .{{SCENE_ID}}-col-card {
+        position: absolute;
+        top: 0;
+        width: 390px;
+        background: rgba(15, 30, 44, 0.94);
+        border: 2px solid rgba(196, 154, 68, 0.35);
+        border-radius: 4px;
+        padding: 24px 28px;
+        box-sizing: border-box;
+      }
+
+      .{{SCENE_ID}}-col-card.left {
+        left: 0;
+      }
+
+      .{{SCENE_ID}}-col-card.right {
+        right: 0;
+        border-color: rgba(53, 127, 131, 0.6);
+      }
+
+      .{{SCENE_ID}}-col-tag {
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #C49A44;
+        margin-bottom: 8px;
+      }
+
+      .{{SCENE_ID}}-col-title {
+        font-size: 24px;
+        font-weight: 800;
+        color: #FFFFFF;
+        margin-bottom: 12px;
+        line-height: 1.25;
+      }
+
+      .{{SCENE_ID}}-col-desc {
+        font-size: 15px;
+        color: #C8D6DF;
+        line-height: 1.5;
+      }
+
+      /* Audio-cued bottom badge */
+      #{{SCENE_ID}}-badge-callout {
+        position: absolute;
+        left: 90px;
+        bottom: 80px;
+        background: #142838;
+        border-left: 5px solid #C49A44;
+        padding: 12px 20px;
+        font-size: 16px;
+        font-weight: 800;
+        color: #F5F0E6;
+        z-index: 12;
+        opacity: 0;
+      }
+    </style>
+
+    <!-- Background Stage -->
+    <div id="{{SCENE_ID}}-bg-stage">
+      <img id="{{SCENE_ID}}-bg-plate" src="{{BG_IMAGE}}" alt="Backdrop">
+    </div>
+
+    <!-- Vignette -->
+    <div id="{{SCENE_ID}}-vignette"></div>
+
+    <!-- Character Cutout -->
+    <img id="{{SCENE_ID}}-char-cutout" src="{{CHAR_IMAGE}}" alt="Protagonist Cutout">
+
+    <!-- Typography Headline Card -->
+    <div id="{{SCENE_ID}}-headline-card">
+      <div id="{{SCENE_ID}}-kicker">{{KICKER_TEXT}}</div>
+      <div id="{{SCENE_ID}}-headline-text">{{HEADLINE_TEXT}}</div>
+    </div>
+
+    <!-- 2-Column Comparative Schematic -->
+    <div id="{{SCENE_ID}}-schematic-stage">
+      <div class="{{SCENE_ID}}-col-card left">
+        <div class="{{SCENE_ID}}-col-tag">{{COL1_TAG}}</div>
+        <div class="{{SCENE_ID}}-col-title">{{COL1_TITLE}}</div>
+        <div class="{{SCENE_ID}}-col-desc">{{COL1_DESC}}</div>
+      </div>
+      <div class="{{SCENE_ID}}-col-card right">
+        <div class="{{SCENE_ID}}-col-tag" style="color:#357F83;">{{COL2_TAG}}</div>
+        <div class="{{SCENE_ID}}-col-title">{{COL2_TITLE}}</div>
+        <div class="{{SCENE_ID}}-col-desc">{{COL2_DESC}}</div>
+      </div>
+    </div>
+
+    <!-- Bottom Spoken Callout Badge -->
+    <div id="{{SCENE_ID}}-badge-callout">{{CALLOUT_TEXT}}</div>
+
+    <script>
+      (() => {
+        const t = gsap.timeline({ paused: true });
+        const dur = {{DURATION_SECONDS}};
+
+        // Subtle backdrop zoom
+        t.fromTo('#{{SCENE_ID}}-bg-plate', { scale: 1.0 }, { scale: 1.06, duration: dur, ease: 'none' }, 0);
+
+        // Character breathing and smooth entrance
+        t.fromTo('#{{SCENE_ID}}-char-cutout', { opacity: 0, x: 50 }, { opacity: 1, x: 0, duration: 1.0, ease: 'power3.out' }, 0.2);
+
+        // Headline entrance
+        t.fromTo('#{{SCENE_ID}}-headline-card', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out' }, 0.8);
+
+        // Schematic comparative columns entrance
+        t.fromTo('#{{SCENE_ID}}-schematic-stage', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out' }, {{CUE_SCHEMATIC_SECONDS}});
+
+        // Spoken callout reveal
+        t.fromTo('#{{SCENE_ID}}-badge-callout', { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.6, ease: 'back.out(1.4)' }, {{CUE_CALLOUT_SECONDS}});
+
+        t.set({}, {}, dur);
+        window.__timelines = window.__timelines || {};
+        window.__timelines.{{SCENE_ID}} = t;
+      })();
+    </script>
+  </div>
+</template>

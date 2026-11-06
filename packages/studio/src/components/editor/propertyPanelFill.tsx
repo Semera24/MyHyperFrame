@@ -83,6 +83,8 @@ export function ImageFillField({
   projectId,
   element,
   onSetHtmlAttribute,
+  onSetStyle,
+  styles,
   value,
   assets,
   disabled,
@@ -92,6 +94,8 @@ export function ImageFillField({
   projectId: string;
   element: DomEditSelection;
   onSetHtmlAttribute: (attr: string, value: string | null) => void | Promise<void>;
+  onSetStyle?: (prop: string, value: string) => void | Promise<unknown>;
+  styles?: Record<string, string>;
   value: string;
   assets: string[];
   disabled?: boolean;
@@ -103,15 +107,36 @@ export function ImageFillField({
   const isImage = element.tagName === "img";
   const imageUrl = isImage ? (element.element.getAttribute("src") ?? "") : value;
   const commitImage = (next: string, projectAsset = false) => {
+    const resolvedPath = next && projectAsset ? toRelativeProjectAssetPath(sourceFile, next) : next;
     if (isImage) {
-      if (next)
-        void onSetHtmlAttribute(
-          "src",
-          projectAsset ? toRelativeProjectAssetPath(sourceFile, next) : next,
-        );
+      if (resolvedPath) void onSetHtmlAttribute("src", resolvedPath);
       return;
     }
-    onCommit(next ? `url("${next}")` : "none");
+    onCommit(resolvedPath ? `url("${resolvedPath}")` : "none");
+  };
+  const currentFit = isImage
+    ? styles?.["object-fit"] || element.computedStyles["object-fit"] || "cover"
+    : styles?.["background-size"] || element.computedStyles["background-size"] || "cover";
+  const currentPosRaw = isImage
+    ? styles?.["object-position"] || element.computedStyles["object-position"] || "50% 50%"
+    : styles?.["background-position"] || element.computedStyles["background-position"] || "50% 50%";
+  const posParts = currentPosRaw.trim().split(/\s+/);
+  const focalX = Number.parseFloat(posParts[0] ?? "50");
+  const focalY = Number.parseFloat(posParts[1] ?? posParts[0] ?? "50");
+  const safeFocalX = Number.isFinite(focalX) ? Math.max(0, Math.min(100, Math.round(focalX))) : 50;
+  const safeFocalY = Number.isFinite(focalY) ? Math.max(0, Math.min(100, Math.round(focalY))) : 50;
+  const commitFit = (fit: string) => {
+    if (!onSetStyle) return;
+    if (isImage) {
+      void onSetStyle("object-fit", fit);
+    } else {
+      void onSetStyle("background-size", fit === "fill" ? "100% 100%" : fit);
+    }
+  };
+  const commitFocalPoint = (nextX: number, nextY: number) => {
+    if (!onSetStyle) return;
+    const posValue = `${Math.round(nextX)}% ${Math.round(nextY)}%`;
+    void onSetStyle(isImage ? "object-position" : "background-position", posValue);
   };
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -227,6 +252,45 @@ export function ImageFillField({
         disabled={disabled}
         onCommit={(next) => commitImage(next.trim())}
       />
+
+      {onSetStyle && (
+        <div className="space-y-2.5 pt-1 border-t border-neutral-800/80">
+          <div className="flex items-center justify-between gap-2">
+            <span className={LABEL}>Fit Mode</span>
+            <SegmentedControl
+              trackName="Fit Mode"
+              options={[
+                { label: "Cover", value: "cover" },
+                { label: "Contain", value: "contain" },
+                { label: "Fill", value: "fill" },
+              ]}
+              value={currentFit === "100% 100%" ? "fill" : currentFit}
+              disabled={disabled}
+              onChange={commitFit}
+            />
+          </div>
+          <SliderControl
+            trackName="Focal X"
+            min={0}
+            max={100}
+            step={1}
+            value={safeFocalX}
+            displayValue={`${safeFocalX}%`}
+            disabled={disabled}
+            onCommit={(nextX: number) => commitFocalPoint(nextX, safeFocalY)}
+          />
+          <SliderControl
+            trackName="Focal Y"
+            min={0}
+            max={100}
+            step={1}
+            value={safeFocalY}
+            displayValue={`${safeFocalY}%`}
+            disabled={disabled}
+            onCommit={(nextY: number) => commitFocalPoint(safeFocalX, nextY)}
+          />
+        </div>
+      )}
     </div>
   );
 }

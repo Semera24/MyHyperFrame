@@ -1,0 +1,103 @@
+{
+  "storyboard": false,
+  "approved": null,
+  "angle": "the product makes its own film",
+  "channel": "X, 16:9",
+  "brand": "Acme",
+  "feature": {
+    "name": "Acme Motion",
+    "url": "https://acme.com/motion",
+    "shipped": "You can now animate a design right on the canvas",
+    "one_thing": "Your designs move where you made them",
+    "viewer": "designers who hand static mockups to engineers",
+    "task": "turn a static pricing card into a hover animation and hand it off",
+    "before": "motion lives in a separate tool and gets lost in handoff",
+    "after": "animate on the canvas and ship it as code",
+    "cta": "Try Acme Motion"
+  },
+  "voice": "silent",
+  "duration": 24,
+  "ratio": "16:9",
+  "ground": "#F2EFE8",
+  "ink": "#141414",
+  "accent": "#3D5AFE",
+  "fonts": {
+    "display": "assets/brand/Display.woff2",
+    "body": "assets/brand/Body.woff2"
+  },
+  "brandReveal": "endcard",
+  "beats": [
+    {
+      "id": "hook",
+      "start": 0,
+      "end": 3.6,
+      "line": "Your mockups stand still",
+      "picture": "a pricing card sits frozen while the cursor hovers it",
+      "route": "staged reveals",
+      "ui": [],
+      "vo": null,
+      "assets": [
+        {
+          "what": "pricing card from the site",
+          "bucket": "capture",
+          "have": true
+        }
+      ],
+      "shots": [
+        {
+          "at": 0.7,
+          "screen": "pricing card, cursor hovering, nothing moves",
+          "motion": "cursor in from off-screen bottom, hovers the card",
+          "sfx": []
+        },
+        {
+          "at": 2.6,
+          "screen": "Your mockups stand still",
+          "motion": "line lands per word and holds dead still while the card behind it starts to move",
+          "sfx": []
+        }
+      ],
+      "seam": "morph",
+      "exit": {
+        "axis": "z",
+        "dir": 1
+      },
+      "entry": {
+        "axis": "z",
+        "dir": 1
+      },
+      "moment": "M<id>",
+      "port": ["M<id>:s01-tiles"],
+      "subject": "the Acme pricing card, not M<id>'s photo tiles",
+      "use": "the tiles become Acme's pricing cards; the row lift becomes the hover",
+      "keep": [],
+      "carrier": "the pricing card grows into the Acme Motion canvas"
+    },
+    {
+      "id": "reveal",
+      "start": 3.6,
+      "end": 6.4,
+      "line": "Introducing Acme Motion",
+      "picture": "the canvas fills the frame; the feature's name lands in a title over it, the cursor already inside",
+      "route": "staged reveals",
+      "shots": [
+        {
+          "at": 4.4,
+          "screen": "Introducing Acme Motion, over the open canvas",
+          "motion": "title lands word by word, holds; camera pushes into the canvas"
+        }
+      ],
+      "seam": "match-cut",
+      "exit": {
+        "axis": "z",
+        "dir": 1
+      },
+      "entry": {
+        "axis": "z",
+        "dir": 1
+      }
+    }
+  ],
+  "notes": [],
+  "intent": "inspiration"
+}

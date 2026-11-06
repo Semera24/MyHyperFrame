@@ -35,6 +35,8 @@ import { timelineClipFocusId } from "./timelineNavigationIdentity";
 import { useTimelineKeyboardActor } from "./useTimelineKeyboardActor";
 import { TimelineTransitionOverlays } from "./TimelineTransitionOverlays";
 import { deriveTimelineTransitionSeamsByTrack } from "./timelineTransitionSeams";
+import { reorderTimelineTrackRows } from "../../utils/studioLayerActions";
+import { useOptionalNLEContext } from "../../components/nle/NLEContext";
 
 function passengerStyleAt(offsetPx: number): CSSProperties {
   return {
@@ -111,6 +113,17 @@ export function TimelineLanes({
   // ponytail: One per-instance namespace prevents aria-controls and aria-owns
   // from resolving into a second timeline that renders the same logical rows.
   const lanesIdPrefix = `timeline-lanes${useId().replaceAll(":", "")}`;
+  const nle = useOptionalNLEContext();
+  const topComp = nle?.compositionStack.at(-1);
+  const activeCompPath = topComp && topComp.id !== "master" ? topComp.id : null;
+  const visualTrackOrder = useMemo(
+    () =>
+      displayTrackOrder.filter((t) => {
+        const rowEls = tracks.find(([k]) => k === t)?.[1] ?? [];
+        return rowEls.length > 0 && !rowEls.some(isAudioTimelineElement);
+      }),
+    [displayTrackOrder, tracks],
+  );
   const expandedClipIds = usePlayerStore((s) => s.expandedClipIds);
   const { collapsedGroupIds, expandedLaneOwnerIds, toggleGroupExpanded, toggleLaneOwnerExpanded } =
     useTimelineGroupDisclosure();
@@ -349,6 +362,69 @@ export function TimelineLanes({
                 onRemoveAutomationLane={removeAutomationLane}
                 onSeek={onSeek}
                 rovingTargetId={keyboard.rovingTargetId}
+                canMoveTrackUp={!isAudioTrack && visualTrackOrder.indexOf(trackNum) > 0}
+                canMoveTrackDown={
+                  !isAudioTrack &&
+                  visualTrackOrder.indexOf(trackNum) >= 0 &&
+                  visualTrackOrder.indexOf(trackNum) < visualTrackOrder.length - 1
+                }
+                onMoveTrackUp={
+                  !isAudioTrack
+                    ? () => {
+                        const idx = visualTrackOrder.indexOf(trackNum);
+                        if (idx > 0) {
+                          const targetTrack = visualTrackOrder[idx - 1];
+                          if (targetTrack !== undefined) {
+                            void reorderTimelineTrackRows({
+                              fromTrackNumber: trackNum,
+                              toTrackNumber: targetTrack,
+                              displayTrackOrder,
+                              tracks,
+                              projectId: nle?.projectId,
+                              activeCompPath,
+                              iframe: nle?.iframeRef.current,
+                            });
+                          }
+                        }
+                      }
+                    : undefined
+                }
+                onMoveTrackDown={
+                  !isAudioTrack
+                    ? () => {
+                        const idx = visualTrackOrder.indexOf(trackNum);
+                        if (idx >= 0 && idx < visualTrackOrder.length - 1) {
+                          const targetTrack = visualTrackOrder[idx + 1];
+                          if (targetTrack !== undefined) {
+                            void reorderTimelineTrackRows({
+                              fromTrackNumber: trackNum,
+                              toTrackNumber: targetTrack,
+                              displayTrackOrder,
+                              tracks,
+                              projectId: nle?.projectId,
+                              activeCompPath,
+                              iframe: nle?.iframeRef.current,
+                            });
+                          }
+                        }
+                      }
+                    : undefined
+                }
+                onDragReorderTrack={
+                  !isAudioTrack
+                    ? (fromTrack, toTrack) => {
+                        void reorderTimelineTrackRows({
+                          fromTrackNumber: fromTrack,
+                          toTrackNumber: toTrack,
+                          displayTrackOrder,
+                          tracks,
+                          projectId: nle?.projectId,
+                          activeCompPath,
+                          iframe: nle?.iframeRef.current,
+                        });
+                      }
+                    : undefined
+                }
               />
               <div
                 role="gridcell"

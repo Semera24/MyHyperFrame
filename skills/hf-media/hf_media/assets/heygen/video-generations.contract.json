@@ -1,0 +1,690 @@
+{
+  "provenance": {
+    "source": "heygen-com/experiment-framework origin/master 48f3e075e0e: openapi/external-api.json /v3/video-generations (EF #55517 Seedance 2.5, #55595 H3 Max, #55674, #55759, #55779)",
+    "checked_at": "2026-10-08",
+    "kind": "backend-OpenAPI-derived structural contract; route hidden from public docs",
+    "notes": [
+      "Asynchronous: POST answers 200 with status pending; GET /v3/video-generations/{id} until completed (time-limited video_url) or failed.",
+      "Idempotency-Key is required; the same key and body returns the original generation.",
+      "Auth: x-api-key only (OAuth refused, EF #55674); charged to HeyGen API credits at the vendor list price; 402 insufficient_credit before any vendor call; a failed generation is refunded.",
+      "minimax-h3-max (fal minimax/h3-max/reference-to-video): first_frame, end_frame and middle_frame are exact frames and combine with reference images, videos and audio. Enterprise workspaces need minimax on their vendor allow list (403 otherwise).",
+      "seedance-2.5 has no frame fields: a frame passed as a reference image guides the look but is not the literal first frame. It may refuse real people.",
+      "2026-10-08: deployed on the api-service canary; prod answers 404 until the release reaches it.",
+      "Request body at most about 22 MiB; inline base64 references together under about 16 MiB decoded."
+    ]
+  },
+  "request_schema": {
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "const": "minimax-h3-max",
+            "description": "Video model.",
+            "enum": ["minimax-h3-max"],
+            "type": "string"
+          },
+          "prompt": {
+            "description": "What the video should show, at most 50,000 characters.",
+            "maxLength": 50000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "duration": {
+            "description": "Output length in seconds, 0.92 to 15; fractions of a second are allowed.",
+            "maximum": 15,
+            "minimum": 0.92,
+            "type": "number"
+          },
+          "resolution": {
+            "description": "Output resolution.",
+            "enum": ["480p", "768p", "1080p"],
+            "type": "string"
+          },
+          "aspect_ratio": {
+            "description": "Output aspect ratio.",
+            "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+            "type": "string"
+          },
+          "prompt_expansion_mode": {
+            "description": "How much the prompt is rewritten before generation: `disabled` sends it as written, `balanced` takes about a second, `quality` up to about 30 seconds for a richer prompt.",
+            "enum": ["disabled", "balanced", "quality"],
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Generation seed."
+          },
+          "first_frame": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via publicly accessible HTTPS URL.",
+                    "properties": {
+                      "type": {
+                        "const": "url",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Publicly accessible HTTPS URL for the asset",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "url"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                    "properties": {
+                      "type": {
+                        "const": "asset_id",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "asset_id": {
+                        "description": "HeyGen asset ID from the asset upload endpoint",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "asset_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via base64-encoded content.",
+                    "properties": {
+                      "type": {
+                        "const": "base64",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "media_type": {
+                        "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                        "type": "string"
+                      },
+                      "data": {
+                        "description": "Base64-encoded file content",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "media_type", "data"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An image the video opens on exactly."
+          },
+          "end_frame": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via publicly accessible HTTPS URL.",
+                    "properties": {
+                      "type": {
+                        "const": "url",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Publicly accessible HTTPS URL for the asset",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "url"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                    "properties": {
+                      "type": {
+                        "const": "asset_id",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "asset_id": {
+                        "description": "HeyGen asset ID from the asset upload endpoint",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "asset_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via base64-encoded content.",
+                    "properties": {
+                      "type": {
+                        "const": "base64",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "media_type": {
+                        "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                        "type": "string"
+                      },
+                      "data": {
+                        "description": "Base64-encoded file content",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "media_type", "data"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An image the video ends on exactly."
+          },
+          "middle_frame": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via publicly accessible HTTPS URL.",
+                    "properties": {
+                      "type": {
+                        "const": "url",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Publicly accessible HTTPS URL for the asset",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "url"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                    "properties": {
+                      "type": {
+                        "const": "asset_id",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "asset_id": {
+                        "description": "HeyGen asset ID from the asset upload endpoint",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "asset_id"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Asset input via base64-encoded content.",
+                    "properties": {
+                      "type": {
+                        "const": "base64",
+                        "description": "Input type discriminator",
+                        "type": "string"
+                      },
+                      "media_type": {
+                        "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                        "type": "string"
+                      },
+                      "data": {
+                        "description": "Base64-encoded file content",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "media_type", "data"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An image that guides the video at `middle_frame_time`."
+          },
+          "middle_frame_time": {
+            "anyOf": [
+              {
+                "maximum": 14.999,
+                "minimum": 0.001,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seconds from the start at which `middle_frame` guides the video, required with it."
+          },
+          "reference_images": {
+            "description": "Reference images for people, objects and style, at most 9, each between 2:5 and 5:2.",
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via publicly accessible HTTPS URL.",
+                  "properties": {
+                    "type": {
+                      "const": "url",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Publicly accessible HTTPS URL for the asset",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "url"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                  "properties": {
+                    "type": {
+                      "const": "asset_id",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "asset_id": {
+                      "description": "HeyGen asset ID from the asset upload endpoint",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "asset_id"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via base64-encoded content.",
+                  "properties": {
+                    "type": {
+                      "const": "base64",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                      "type": "string"
+                    },
+                    "data": {
+                      "description": "Base64-encoded file content",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "media_type", "data"],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 9,
+            "type": "array"
+          },
+          "reference_videos": {
+            "description": "Reference videos for motion, people and style, at most 3, each 2 to 15 seconds and 15 seconds in total.",
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via publicly accessible HTTPS URL.",
+                  "properties": {
+                    "type": {
+                      "const": "url",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Publicly accessible HTTPS URL for the asset",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "url"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                  "properties": {
+                    "type": {
+                      "const": "asset_id",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "asset_id": {
+                      "description": "HeyGen asset ID from the asset upload endpoint",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "asset_id"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via base64-encoded content.",
+                  "properties": {
+                    "type": {
+                      "const": "base64",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                      "type": "string"
+                    },
+                    "data": {
+                      "description": "Base64-encoded file content",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "media_type", "data"],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "reference_audio": {
+            "description": "Reference audio clips, at most 3, each 2 to 15 seconds and 15 seconds in total.",
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via publicly accessible HTTPS URL.",
+                  "properties": {
+                    "type": {
+                      "const": "url",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Publicly accessible HTTPS URL for the asset",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "url"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                  "properties": {
+                    "type": {
+                      "const": "asset_id",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "asset_id": {
+                      "description": "HeyGen asset ID from the asset upload endpoint",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "asset_id"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via base64-encoded content.",
+                  "properties": {
+                    "type": {
+                      "const": "base64",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                      "type": "string"
+                    },
+                    "data": {
+                      "description": "Base64-encoded file content",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "media_type", "data"],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "callback_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Webhook URL to receive a POST notification (`video_generation.success` or `video_generation.fail`) when the generation finishes, in addition to the workspace's configured webhook endpoints."
+          },
+          "callback_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Caller-defined identifier echoed back in the webhook payload."
+          }
+        },
+        "required": ["model", "prompt"],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "const": "seedance-2.5",
+            "description": "Video model.",
+            "enum": ["seedance-2.5"],
+            "type": "string"
+          },
+          "prompt": {
+            "description": "What the video should show.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "duration": {
+            "description": "Output length in whole seconds, 4 to 30.",
+            "maximum": 30,
+            "minimum": 4,
+            "type": "integer"
+          },
+          "resolution": {
+            "description": "Output resolution.",
+            "enum": ["480p", "720p", "1080p"],
+            "type": "string"
+          },
+          "aspect_ratio": {
+            "description": "Output aspect ratio.",
+            "enum": ["16:9", "1:1", "9:16"],
+            "type": "string"
+          },
+          "generate_audio": {
+            "description": "Generate a soundtrack with the video.",
+            "type": "boolean"
+          },
+          "reference_images": {
+            "description": "Reference images, at most 30.",
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via publicly accessible HTTPS URL.",
+                  "properties": {
+                    "type": {
+                      "const": "url",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Publicly accessible HTTPS URL for the asset",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "url"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                  "properties": {
+                    "type": {
+                      "const": "asset_id",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "asset_id": {
+                      "description": "HeyGen asset ID from the asset upload endpoint",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "asset_id"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via base64-encoded content.",
+                  "properties": {
+                    "type": {
+                      "const": "base64",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                      "type": "string"
+                    },
+                    "data": {
+                      "description": "Base64-encoded file content",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "media_type", "data"],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "reference_videos": {
+            "description": "Reference videos, at most 10, each 2 to 10 seconds and 30 seconds in total.",
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via publicly accessible HTTPS URL.",
+                  "properties": {
+                    "type": {
+                      "const": "url",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Publicly accessible HTTPS URL for the asset",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "url"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via HeyGen asset ID from the asset upload endpoint.",
+                  "properties": {
+                    "type": {
+                      "const": "asset_id",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "asset_id": {
+                      "description": "HeyGen asset ID from the asset upload endpoint",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "asset_id"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Asset input via base64-encoded content.",
+                  "properties": {
+                    "type": {
+                      "const": "base64",
+                      "description": "Input type discriminator",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "description": "MIME type of the encoded content (e.g. \"image/png\")",
+                      "type": "string"
+                    },
+                    "data": {
+                      "description": "Base64-encoded file content",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "media_type", "data"],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "callback_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Webhook URL to receive a POST notification (`video_generation.success` or `video_generation.fail`) when the generation finishes, in addition to the workspace's configured webhook endpoints."
+          },
+          "callback_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Caller-defined identifier echoed back in the webhook payload."
+          }
+        },
+        "required": ["model", "prompt"],
+        "type": "object"
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 import { useOwnPreviewIframe, usePreviewIframeStore } from "./player/store/previewIframeStore";
 import { buildProjectApiPath } from "./utils/projectRouting";
-import { useState, useCallback, useRef, useMemo, type SetStateAction } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, type SetStateAction } from "react";
 import { useStableHandlers } from "./hooks/useStableHandlers";
 import { useHistoryFlags, useToolbarSession } from "./hooks/useShellSlices";
 import { useDismissingTabSetter, useRightPanelIntent } from "./hooks/useRightPanelIntents";
@@ -117,6 +117,17 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
     setRefreshKey,
   });
   const fileManager = useStableHandlers(fileManagerResult, projectId);
+
+  useEffect(() => {
+    const handleReload = () => reloadPreview();
+    const handleRefreshFiles = () => void fileManager.refreshFileTree();
+    window.addEventListener("hf:reload-preview", handleReload);
+    window.addEventListener("hf:refresh-file-tree", handleRefreshFiles);
+    return () => {
+      window.removeEventListener("hf:reload-preview", handleReload);
+      window.removeEventListener("hf:refresh-file-tree", handleRefreshFiles);
+    };
+  }, [reloadPreview, fileManager.refreshFileTree]);
   const masterCompPath = useMemo(
     () => resolveMasterCompositionPath(fileManager.compositions),
     [fileManager.compositions],
@@ -473,6 +484,9 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
       lintHasError: lint.hasLintError,
       onAddAssetToTimeline: handleAddAssetAtPlayhead,
       onAddCompositionToTimeline: handleAddCompositionAtPlayhead,
+      activeCompPath,
+      reloadPreview,
+      refreshFileTree: fileManager.refreshFileTree,
     },
     {
       activeBlockParams,

@@ -15,6 +15,7 @@ export const liveTime = {
   },
   seekCount: () => seekCount,
   latest: () => latestTime,
+  get: () => latestTime,
   subscribe: (listener: TimeListener) => {
     timeListeners.add(listener);
     return () => timeListeners.delete(listener);

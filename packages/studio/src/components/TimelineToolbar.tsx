@@ -1,12 +1,38 @@
-import { memo, useEffect, useRef, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowsOutLineHorizontal,
+  Crop,
   FrameCorners,
   Image,
   Magnet,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
+  SquaresFour,
+  TextT,
 } from "@phosphor-icons/react";
+import { useOptionalNLEContext } from "./nle/NLEContext";
+import { useStudioShellContextOptional } from "../contexts/StudioContext";
+import { useCropPresetBarStore } from "./editor/cropPresetStore";
+import {
+  AI_AGENTS,
+  formatAllOpenPinsPromptForAgent,
+  useCanvasCommentsStore,
+  type TargetAiAgent,
+} from "./editor/canvasCommentsStore";
+import { targetAgentToEngine, useAgentAssistantStore } from "./panels/AgentAssistantPanel";
+import {
+  detectUnbundleCandidate,
+  groupSelectedElementsIntoLayer,
+  insertFreeLayerInActiveScene,
+  pinRevisionNoteToQc,
+  resolveActiveSceneTargetAtPlayhead,
+  unbundleElementContainer,
+  uploadAndInsertImageInActiveScene,
+  useDocumentaryQcOverlayStore,
+  type DocumentaryPresetId,
+} from "../utils/studioLayerActions";
+import { buildProjectApiPath } from "../utils/projectRouting";
+import { studioApiFetch } from "../utils/studioApiFetch";
 import {
   useEnableKeyframes,
   isPlayheadWithinTween,
@@ -25,7 +51,7 @@ import {
   zoomTimelineStep,
   zoomTimelineToSelectedClips,
 } from "../player/components/timelineZoomInput";
-import { usePlayerStore, type TimelineElement } from "../player";
+import { liveTime, usePlayerStore, type TimelineElement } from "../player";
 import { Tooltip } from "./ui";
 import { AudioMetersIcon } from "./icons/AudioMetersIcon";
 import { RippleEditIcon } from "./icons/RippleEditIcon";
@@ -198,6 +224,88 @@ export const TimelineToolbar = memo(function TimelineToolbar({
     onToggle: onToggleKeyframe,
   } = useKeyframeToggle(domEditSession);
 
+  const nle = useOptionalNLEContext();
+  const shell = useStudioShellContextOptional();
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [addLayerMenuOpen, setAddLayerMenuOpen] = useState(false);
+  const [pinNoteOpen, setPinNoteOpen] = useState(false);
+  const [pinNoteText, setPinNoteText] = useState("");
+  const [pinNoteStatus, setPinNoteStatus] = useState<string | null>(null);
+  const [projectImageAssets, setProjectImageAssets] = useState<string[]>([]);
+  const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const safeZoneVisible = useDocumentaryQcOverlayStore((s) => s.safeZoneVisible);
+  const toggleSafeZone = useDocumentaryQcOverlayStore((s) => s.toggleSafeZone);
+  const backdropMode = useDocumentaryQcOverlayStore((s) => s.backdropMode);
+  const cycleBackdropMode = useDocumentaryQcOverlayStore((s) => s.cycleBackdropMode);
+  const commentModeActive = useCanvasCommentsStore((s) => s.commentModeActive);
+  const toggleCommentMode = useCanvasCommentsStore((s) => s.toggleCommentMode);
+  const selectedAgent = useCanvasCommentsStore((s) => s.selectedAgent);
+  const setSelectedAgent = useCanvasCommentsStore((s) => s.setSelectedAgent);
+  const canvasPins = useCanvasCommentsStore((s) => s.pins);
+  const topComp = nle?.compositionStack.at(-1);
+  const activeCompPath =
+    (topComp && topComp.id !== "master" ? topComp.id : null) ??
+    (shell?.activeCompPath && shell.activeCompPath !== "index.html" ? shell.activeCompPath : null);
+  const isDrilledIntoScene =
+    Boolean(nle && nle.compositionStack.length > 1) || Boolean(activeCompPath);
+  const activeSceneLabel = (topComp?.label || activeCompPath || "")
+    .replace(/^compositions\//, "")
+    .replace(/\.html$/, "")
+    .toUpperCase();
+  const activeSelection = domEditSession?.domEditSelection ?? null;
+  const unbundleCandidate = detectUnbundleCandidate(activeSelection?.element ?? null);
+
+  // Resolve all selected DOM elements for Group action (single selection or multi-selected timeline/canvas elements)
+  const resolveSelectedDomElements = (): HTMLElement[] => {
+    const doc = activeSelection?.element?.ownerDocument;
+    if (doc && selectedElementIds.size > 1) {
+      const found: HTMLElement[] = [];
+      for (const id of selectedElementIds) {
+        const el = doc.getElementById(id) ?? doc.querySelector<HTMLElement>(`[data-hf-id="${id}"]`);
+        if (el && !found.includes(el)) found.push(el);
+      }
+      if (found.length > 0) return found;
+    }
+    return activeSelection?.element ? [activeSelection.element] : [];
+  };
+
+  useEffect(() => {
+    if ((!imagePickerOpen && !addLayerMenuOpen) || !nle?.projectId) return;
+    let cancelled = false;
+    studioApiFetch(buildProjectApiPath(nle.projectId, ""))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { files?: string[] } | null) => {
+        if (cancelled || !data?.files) return;
+        const imgs = data.files.filter((f) => /\.(png|svg|jpe?g|webp|gif)$/i.test(f));
+        setProjectImageAssets(imgs);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [imagePickerOpen, addLayerMenuOpen, nle?.projectId]);
+
+  // Cmd+G / Ctrl+G shortcut to group selected layers on the canvas
+  useEffect(() => {
+    if (!nle) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "g") {
+        if (isTypingTarget(e.target)) return;
+        const els = resolveSelectedDomElements();
+        if (els.length === 0) return;
+        e.preventDefault();
+        void groupSelectedElementsIntoLayer({
+          elements: els,
+          projectId: nle.projectId,
+          activeCompPath,
+          reloadPreview: nle.refreshPlayer,
+        });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   // Wire the Add keyframe shortcut the toolbar advertises. Active only when
   // there's a keyframeable selection; otherwise K stays JKL-pause in playback.
   useKeyframeKeyboard({
@@ -226,6 +334,31 @@ export const TimelineToolbar = memo(function TimelineToolbar({
     <div className="border-b border-neutral-800/60">
       <div className="flex items-center justify-between px-2 py-0.5">
         <div className="flex items-center gap-0.5">
+          {isDrilledIntoScene && (
+            <>
+              <Tooltip label="Return to the Master Timeline showing all episode scenes (S01..S09) side-by-side">
+                <button
+                  type="button"
+                  data-testid="back-to-master-button"
+                  onClick={() => {
+                    if (nle) {
+                      nle.updateCompositionStack((prev) => (prev.length > 0 ? [prev[0]!] : prev));
+                    }
+                    shell?.setActiveCompPath(null);
+                  }}
+                  className="h-7 px-2.5 mr-1 rounded-md text-[11px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 transition-colors shrink-0"
+                >
+                  <span>← Back to Master (All Scenes)</span>
+                  {activeSceneLabel && (
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-100 font-mono text-[10px] font-bold">
+                      Viewing {activeSceneLabel}
+                    </span>
+                  )}
+                </button>
+              </Tooltip>
+              <div aria-hidden="true" className="mx-1 h-4 w-px bg-neutral-800" />
+            </>
+          )}
           {showHistory && <TimelineHistoryButtons {...history} />}
           <TimelineToolPicker showSelectAroundPlayhead={showSelectAroundPlayhead} />
           {/* Divider: tool-mode | editing-actions */}
@@ -475,6 +608,511 @@ export const TimelineToolbar = memo(function TimelineToolbar({
               </Tooltip>
             );
           })()}
+          {nle && (
+            <>
+              <div aria-hidden="true" className="mx-1 h-4 w-px bg-neutral-800" />
+              <input
+                ref={fileUploadInputRef}
+                type="file"
+                accept=".png,.svg,.jpg,.jpeg,.webp,.gif"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  setAddLayerMenuOpen(false);
+                  setImagePickerOpen(false);
+                  void uploadAndInsertImageInActiveScene({
+                    file,
+                    projectId: nle.projectId,
+                    activeCompPath,
+                    selectedSourceFile: activeSelection?.sourceFile,
+                    reloadPreview: nle.refreshPlayer,
+                  });
+                }}
+              />
+              {/* Unified + Add Layer ▾ menu */}
+              <div className="relative">
+                <Tooltip label="Add Text, Image/SVG, Empty Group, or Turning Point Stories Preset at playhead">
+                  <button
+                    type="button"
+                    aria-label="Add layer menu"
+                    onClick={() => {
+                      setAddLayerMenuOpen((prev) => !prev);
+                      setImagePickerOpen(false);
+                      setPinNoteOpen(false);
+                    }}
+                    className="h-7 px-2 rounded-md text-[11px] font-semibold bg-studio-accent/15 text-accent-ink hover:bg-studio-accent/25 flex items-center gap-1 transition-colors"
+                  >
+                    <span>+ Add Layer ▾</span>
+                  </button>
+                </Tooltip>
+                {addLayerMenuOpen && (
+                  <div className="absolute top-full left-0 mt-1.5 z-200 w-72 rounded-lg border border-neutral-700 bg-neutral-900 p-1.5 shadow-xl text-xs">
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                      Create Layer at Playhead
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddLayerMenuOpen(false);
+                        void insertFreeLayerInActiveScene({
+                          kind: "text",
+                          text: "New Text",
+                          projectId: nle.projectId,
+                          activeCompPath,
+                          selectedSourceFile: activeSelection?.sourceFile,
+                          reloadPreview: nle.refreshPlayer,
+                        });
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded text-neutral-200 hover:bg-studio-accent/20 hover:text-white flex items-center justify-between"
+                    >
+                      <span>+ Text Layer</span>
+                      <span className="text-[10px] text-neutral-500">Free text</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddLayerMenuOpen(false);
+                        fileUploadInputRef.current?.click();
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded text-neutral-200 hover:bg-studio-accent/20 hover:text-white flex items-center justify-between"
+                    >
+                      <span>+ Upload Image / SVG from Mac…</span>
+                      <span className="text-[10px] text-neutral-500">assets/</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddLayerMenuOpen(false);
+                        setImagePickerOpen(true);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded text-neutral-200 hover:bg-studio-accent/20 hover:text-white flex items-center justify-between"
+                    >
+                      <span>+ Image / SVG from Project Assets ▸</span>
+                      <span className="text-[10px] text-neutral-500">
+                        {projectImageAssets.length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddLayerMenuOpen(false);
+                        void insertFreeLayerInActiveScene({
+                          kind: "group",
+                          text: "Group",
+                          projectId: nle.projectId,
+                          activeCompPath,
+                          selectedSourceFile: activeSelection?.sourceFile,
+                          reloadPreview: nle.refreshPlayer,
+                        });
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded text-neutral-200 hover:bg-studio-accent/20 hover:text-white flex items-center justify-between"
+                    >
+                      <span>+ Empty Group Layer</span>
+                      <span className="text-[10px] text-neutral-500">600×400</span>
+                    </button>
+                    <div className="my-1 border-t border-neutral-800" />
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
+                      Turning Point Stories Presets
+                    </div>
+                    {(
+                      [
+                        {
+                          id: "callout-card" as DocumentaryPresetId,
+                          label: "Editorial Callout Card",
+                          hint: "Navy + Ochre",
+                        },
+                        {
+                          id: "map-badge" as DocumentaryPresetId,
+                          label: "Map Label Badge",
+                          hint: "Teal pill",
+                        },
+                        {
+                          id: "stat-card" as DocumentaryPresetId,
+                          label: "Historical Stat & Citation Card",
+                          hint: "Metric + source",
+                        },
+                        {
+                          id: "subscribe-cta" as DocumentaryPresetId,
+                          label: "Subscribe CTA Block",
+                          hint: "Closing card",
+                        },
+                      ] as const
+                    ).map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setAddLayerMenuOpen(false);
+                          void insertFreeLayerInActiveScene({
+                            kind: "preset",
+                            presetId: preset.id,
+                            projectId: nle.projectId,
+                            activeCompPath,
+                            selectedSourceFile: activeSelection?.sourceFile,
+                            reloadPreview: nle.refreshPlayer,
+                          });
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded text-neutral-200 hover:bg-amber-500/20 hover:text-amber-200 flex items-center justify-between"
+                      >
+                        <span>{preset.label}</span>
+                        <span className="text-[10px] text-neutral-500">{preset.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Tooltip label="Add free Text layer at playhead">
+                <button
+                  type="button"
+                  aria-label="Add text layer"
+                  onClick={() => {
+                    void insertFreeLayerInActiveScene({
+                      kind: "text",
+                      text: "New Text",
+                      projectId: nle.projectId,
+                      activeCompPath,
+                      selectedSourceFile: activeSelection?.sourceFile,
+                      reloadPreview: nle.refreshPlayer,
+                    });
+                  }}
+                  className="h-7 px-2 rounded-md text-[11px] font-medium text-neutral-300 hover:bg-hover hover:text-white flex items-center gap-1 transition-colors shrink-0 whitespace-nowrap"
+                >
+                  <TextT size={14} weight="bold" aria-hidden="true" />
+                  <span>+ Text</span>
+                </button>
+              </Tooltip>
+              <div className="relative shrink-0">
+                <Tooltip label="Add free Image/SVG layer at playhead">
+                  <button
+                    type="button"
+                    aria-label="Add image layer"
+                    onClick={() => {
+                      setImagePickerOpen((prev) => !prev);
+                      setAddLayerMenuOpen(false);
+                    }}
+                    className="h-7 px-2 rounded-md text-[11px] font-medium text-neutral-300 hover:bg-hover hover:text-white flex items-center gap-1 transition-colors shrink-0 whitespace-nowrap"
+                  >
+                    <Image size={14} weight="bold" aria-hidden="true" />
+                    <span>+ Image</span>
+                  </button>
+                </Tooltip>
+                {imagePickerOpen && (
+                  <div className="absolute top-full left-0 mt-1.5 z-200 w-72 max-h-64 overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-900 p-1.5 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImagePickerOpen(false);
+                        fileUploadInputRef.current?.click();
+                      }}
+                      className="w-full text-left px-2 py-1.5 mb-1 rounded text-xs font-medium text-accent-ink bg-studio-accent/15 hover:bg-studio-accent/25 block"
+                    >
+                      + Upload Image / SVG from Mac…
+                    </button>
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                      Insert Project Asset at Playhead
+                    </div>
+                    {projectImageAssets.length === 0 ? (
+                      <div className="px-2 py-2 text-xs text-neutral-500">
+                        No image/SVG assets found in project.
+                      </div>
+                    ) : (
+                      projectImageAssets.map((assetPath) => (
+                        <button
+                          key={assetPath}
+                          type="button"
+                          onClick={() => {
+                            setImagePickerOpen(false);
+                            void insertFreeLayerInActiveScene({
+                              kind: "image",
+                              src: assetPath,
+                              projectId: nle.projectId,
+                              activeCompPath,
+                              selectedSourceFile: activeSelection?.sourceFile,
+                              reloadPreview: nle.refreshPlayer,
+                            });
+                          }}
+                          className="w-full text-left px-2 py-1.5 rounded text-xs text-neutral-200 hover:bg-studio-accent/20 hover:text-white truncate block"
+                          title={assetPath}
+                        >
+                          {assetPath.replace(/^assets\//, "")}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              <Tooltip
+                label={
+                  activeSelection
+                    ? "Open interactive on-canvas Crop tool for selected layer"
+                    : "Select a layer on canvas to crop"
+                }
+              >
+                <button
+                  type="button"
+                  disabled={!activeSelection}
+                  aria-label="Crop selected layer"
+                  onClick={() => {
+                    if (!activeSelection) return;
+                    useCropPresetBarStore.getState().open({
+                      hfId: activeSelection.hfId ?? undefined,
+                      id: activeSelection.id ?? undefined,
+                    });
+                  }}
+                  className={
+                    activeSelection
+                      ? "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-300 hover:bg-hover hover:text-white flex items-center gap-1 transition-colors shrink-0 whitespace-nowrap"
+                      : "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-500 opacity-40 cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap"
+                  }
+                >
+                  <Crop size={14} weight="bold" aria-hidden="true" />
+                  <span>Crop</span>
+                </button>
+              </Tooltip>
+              <Tooltip
+                label={
+                  activeSelection
+                    ? "Wrap selected layer(s) into a movable Group Layer (Cmd+G)"
+                    : "Select one or more layers to group (Cmd+G)"
+                }
+              >
+                <button
+                  type="button"
+                  disabled={!activeSelection}
+                  aria-label="Group selected layers"
+                  onClick={() => {
+                    const els = resolveSelectedDomElements();
+                    if (els.length === 0) return;
+                    void groupSelectedElementsIntoLayer({
+                      elements: els,
+                      projectId: nle.projectId,
+                      activeCompPath,
+                      reloadPreview: nle.refreshPlayer,
+                    });
+                  }}
+                  className={
+                    activeSelection
+                      ? "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-300 hover:bg-hover hover:text-white flex items-center gap-1 transition-colors shrink-0 whitespace-nowrap"
+                      : "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-500 opacity-40 cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap"
+                  }
+                >
+                  <span>Group</span>
+                </button>
+              </Tooltip>
+              <Tooltip
+                label={
+                  unbundleCandidate
+                    ? "Convert Grid/Flex container into freely movable absolute layers"
+                    : "Select a Grid/Flex container or item to unbundle into free layers"
+                }
+              >
+                <button
+                  type="button"
+                  disabled={!unbundleCandidate}
+                  aria-label="Unbundle Grid/Flex into free layers"
+                  onClick={() => {
+                    if (!activeSelection?.element) return;
+                    void unbundleElementContainer({
+                      element: activeSelection.element,
+                      projectId: nle.projectId,
+                      activeCompPath,
+                      reloadPreview: nle.refreshPlayer,
+                    });
+                  }}
+                  className={
+                    unbundleCandidate
+                      ? "h-7 px-2 rounded-md text-[11px] font-medium text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 flex items-center gap-1 transition-colors shrink-0 whitespace-nowrap"
+                      : "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-500 opacity-40 cursor-not-allowed flex items-center gap-1 shrink-0 whitespace-nowrap"
+                  }
+                >
+                  <SquaresFour size={14} weight="bold" aria-hidden="true" />
+                  <span>Unbundle</span>
+                </button>
+              </Tooltip>
+              <div aria-hidden="true" className="mx-1 h-4 w-px bg-neutral-800 shrink-0" />
+              {/* D3: Safe 90x70 margin toggle & Cutout Halo Backdrop Switcher */}
+              <Tooltip label="Toggle 90px × 70px Documentary Safe-Margin Guide (1740×940)">
+                <button
+                  type="button"
+                  aria-label="Toggle 90x70 safe margin guide"
+                  aria-pressed={safeZoneVisible}
+                  onClick={toggleSafeZone}
+                  className={
+                    safeZoneVisible
+                      ? "h-7 px-2 rounded-md text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0 whitespace-nowrap"
+                      : "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-400 hover:bg-hover hover:text-white shrink-0 whitespace-nowrap"
+                  }
+                >
+                  Safe 90×70
+                </button>
+              </Tooltip>
+              <Tooltip label="Cycle Cutout Halo Inspection Backdrop (Default → Checkerboard → Light #F5F0E6 → Dark #142838)">
+                <button
+                  type="button"
+                  aria-label="Cycle cutout backdrop mode"
+                  onClick={cycleBackdropMode}
+                  className={
+                    backdropMode !== "default"
+                      ? "h-7 px-2 rounded-md text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0 whitespace-nowrap"
+                      : "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-400 hover:bg-hover hover:text-white shrink-0 whitespace-nowrap"
+                  }
+                >
+                  Backdrop: {backdropMode === "default" ? "Off" : backdropMode}
+                </button>
+              </Tooltip>
+              {/* D4: Spatial Point-and-Comment on Canvas + Quick Pin */}
+              <Tooltip label="Toggle Spatial 'Comment on Canvas' Mode — Click anywhere on the preview canvas to drop a numbered revision pin">
+                <button
+                  type="button"
+                  aria-label="Toggle Comment on Canvas mode"
+                  aria-pressed={commentModeActive}
+                  onClick={() => {
+                    toggleCommentMode();
+                    setPinNoteOpen(false);
+                    setAddLayerMenuOpen(false);
+                    setImagePickerOpen(false);
+                  }}
+                  className={
+                    commentModeActive
+                      ? "h-7 px-2.5 rounded-md text-[11px] font-semibold bg-amber-500 text-black shadow-sm flex items-center gap-1 shrink-0 whitespace-nowrap"
+                      : "h-7 px-2.5 rounded-md text-[11px] font-medium text-neutral-200 hover:bg-hover hover:text-white flex items-center gap-1 shrink-0 whitespace-nowrap"
+                  }
+                >
+                  <span>📍 Comment</span>
+                  {canvasPins.filter((p) => p.status === "OPEN").length > 0 && (
+                    <span className="rounded-full bg-amber-500/20 px-1.5 text-[10px] font-bold text-amber-300">
+                      {canvasPins.filter((p) => p.status === "OPEN").length}
+                    </span>
+                  )}
+                </button>
+              </Tooltip>
+              <div className="relative">
+                <Tooltip label="Quick Pin Note at Playhead to ../QC/<EP_ID>_Revision_Notes.md">
+                  <button
+                    type="button"
+                    aria-label="Pin revision note to QC"
+                    onClick={() => {
+                      setPinNoteOpen((prev) => !prev);
+                      setPinNoteStatus(null);
+                      setAddLayerMenuOpen(false);
+                      setImagePickerOpen(false);
+                    }}
+                    className={
+                      pinNoteOpen
+                        ? "h-7 px-2 rounded-md text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : "h-7 px-2 rounded-md text-[11px] font-medium text-neutral-300 hover:bg-hover hover:text-white"
+                    }
+                  >
+                    + Pin Note
+                  </button>
+                </Tooltip>
+                {pinNoteOpen && (
+                  <div className="absolute top-full left-0 mt-1.5 z-200 w-80 rounded-lg border border-neutral-700 bg-neutral-900 p-2.5 shadow-xl text-xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                        Pin Note to QC Revision Notes
+                      </span>
+                      <span className="font-mono text-[10px] text-neutral-400">
+                        {(liveTime.get() || currentTime).toFixed(2)}s ·{" "}
+                        {Math.round((liveTime.get() || currentTime) * 30)}f
+                      </span>
+                    </div>
+                    <div className="mb-2 flex items-center gap-2 font-mono text-[10px] text-neutral-400">
+                      <span className="truncate">
+                        Scene:{" "}
+                        {
+                          resolveActiveSceneTargetAtPlayhead(
+                            activeCompPath,
+                            activeSelection?.sourceFile,
+                          ).targetFile
+                        }
+                      </span>
+                      <span>·</span>
+                      <span className="truncate">
+                        Target: #{activeSelection?.id || activeSelection?.hfId || "scene"}
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={pinNoteText}
+                      onChange={(e) => setPinNoteText(e.target.value)}
+                      placeholder="Describe visual fix or note for QC…"
+                      className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none mb-2"
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Enter" && pinNoteText.trim()) {
+                          e.preventDefault();
+                          const sceneFile = resolveActiveSceneTargetAtPlayhead(
+                            activeCompPath,
+                            activeSelection?.sourceFile,
+                          ).targetFile;
+                          void pinRevisionNoteToQc({
+                            projectId: nle.projectId,
+                            timestampSeconds: currentTime,
+                            frame: Math.round(currentTime * 30),
+                            sceneFile,
+                            elementId: activeSelection?.id || activeSelection?.hfId || "scene",
+                            note: pinNoteText.trim(),
+                          }).then((res) => {
+                            if (res.ok) {
+                              setPinNoteText("");
+                              setPinNoteStatus("Saved to QC Revision Notes");
+                              setTimeout(() => setPinNoteOpen(false), 900);
+                            } else {
+                              setPinNoteStatus("Failed to save note");
+                            }
+                          });
+                        }
+                      }}
+                    />
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-emerald-300">{pinNoteStatus ?? ""}</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPinNoteOpen(false)}
+                          className="px-2 py-1 rounded text-[11px] text-neutral-400 hover:text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!pinNoteText.trim()}
+                          onClick={() => {
+                            const sceneFile = resolveActiveSceneTargetAtPlayhead(
+                              activeCompPath,
+                              activeSelection?.sourceFile,
+                            ).targetFile;
+                            void pinRevisionNoteToQc({
+                              projectId: nle.projectId,
+                              timestampSeconds: currentTime,
+                              frame: Math.round(currentTime * 30),
+                              sceneFile,
+                              elementId: activeSelection?.id || activeSelection?.hfId || "scene",
+                              note: pinNoteText.trim(),
+                            }).then((res) => {
+                              if (res.ok) {
+                                setPinNoteText("");
+                                setPinNoteStatus("Saved to QC Revision Notes");
+                                setTimeout(() => setPinNoteOpen(false), 900);
+                              } else {
+                                setPinNoteStatus("Failed to save note");
+                              }
+                            });
+                          }}
+                          className="px-2.5 py-1 rounded bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
+                        >
+                          Save to QC
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-0.5">
           {rightActions}

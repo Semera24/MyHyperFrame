@@ -1,0 +1,52 @@
+{
+  "provenance": {
+    "source": "heygen-com/experiment-framework PR #55246 (synchronous /v3/audio/music on Lyria 3 Pro); live canary calls through the HyperFrames Desktop key proxy on 2026-10-07",
+    "checked_at": "2026-10-07",
+    "kind": "PR-and-live-call-derived structural contract; route hidden from public docs",
+    "notes": [
+      "Synchronous: one POST generates the track; GET /v3/audio/music/{id} re-reads it with a fresh 1 h signed audio_url.",
+      "Idempotency-Key is required; the same key with a different body is 409, a duplicate while running is 409 request_in_progress, a replay returns the same job without a new charge.",
+      "Auth: x-api-key (OAuth tokens get 403 api_key_required) with assets:write / assets:read. Charged per song to HeyGen API credits before the model runs; refunded on failure. 402 when the balance cannot cover one song.",
+      "duration_seconds is a target: longer renders are trimmed with a fade, shorter ones are kept; the response reports the measured duration_seconds. There is no tier below 30 s.",
+      "Response data: id, status, model, created_at, requested_duration_seconds, duration_seconds, audio_url, format (mp3). Errors include content_policy_violation (400), 502/504 vendor outage or timeout."
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["model", "prompt", "duration_seconds"],
+    "properties": {
+      "model": {
+        "type": "string",
+        "enum": ["lyria-3-pro"]
+      },
+      "prompt": {
+        "type": "string",
+        "minLength": 1
+      },
+      "duration_seconds": {
+        "type": "integer",
+        "enum": [30, 60, 120, 180]
+      },
+      "bpm": {
+        "type": "integer",
+        "minimum": 60,
+        "maximum": 180
+      },
+      "intensity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5
+      },
+      "instrumental": {
+        "type": "boolean"
+      },
+      "lyrics": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 3000,
+        "description": "Sung verbatim; not with instrumental"
+      }
+    }
+  }
+}

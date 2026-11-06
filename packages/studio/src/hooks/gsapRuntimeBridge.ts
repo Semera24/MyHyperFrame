@@ -238,7 +238,17 @@ async function planDrag(
       : { status: "persisted" };
   }
   const gsapPos = readGsapPositionFromIframe(iframe, selector) ?? { x: 0, y: 0 };
-  return gsapPositionFromDragOutcome(selection, posAnim, offset, gsapPos, iframe, moment);
+  const outcome = gsapPositionFromDragOutcome(selection, posAnim, offset, gsapPos, iframe, moment);
+  if (
+    outcome.status === "blocked" &&
+    (outcome.detail === "eased-keyframes" || outcome.detail === "unknown-ease")
+  ) {
+    const step = stepListBlock(posAnim);
+    return step
+      ? { status: "blocked", reason: "keyframes-uneditable", detail: step }
+      : { status: "persisted" };
+  }
+  return outcome;
 }
 
 /** Commits a drag through the GSAP script. Callers reject `blocked` (the gesture layer
@@ -375,7 +385,25 @@ export async function tryGsapDragIntercept(
   if (route === "whole-path") {
     await commitWholePathOffset(selection, posAnim, offset, gsapPos, iframe, selector, cbs);
   } else {
-    return commitGsapPositionFromDrag(selection, posAnim, offset, gsapPos, iframe, cbs);
+    const outcome = await commitGsapPositionFromDrag(
+      selection,
+      posAnim,
+      offset,
+      gsapPos,
+      iframe,
+      cbs,
+    );
+    if (
+      outcome.status === "blocked" &&
+      (outcome.detail === "eased-keyframes" || outcome.detail === "unknown-ease")
+    ) {
+      // Fallback: when playhead keyframe insertion is blocked due to eased keyframes
+      // or an unparsed ease, shift the whole animation path cleanly instead of
+      // blocking the user's manual canvas drag.
+      await commitWholePathOffset(selection, posAnim, offset, gsapPos, iframe, selector, cbs);
+      return { status: "persisted" };
+    }
+    return outcome;
   }
   return { status: "persisted" };
 }

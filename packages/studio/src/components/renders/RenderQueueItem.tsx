@@ -1,4 +1,5 @@
 import { buildProjectApiPath } from "../../utils/projectRouting";
+import { studioApiFetch } from "../../utils/studioApiFetch";
 import { memo, useCallback, useState } from "react";
 import { RenderQueueInfo } from "./RenderQueueInfo";
 import { RenderPreview } from "./RenderPreview";
@@ -25,6 +26,8 @@ export const RenderQueueItem = memo(function RenderQueueItem({
   const [hovered, setHovered] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [copyingToEpisode, setCopyingToEpisode] = useState(false);
+  const [copiedToEpisode, setCopiedToEpisode] = useState(false);
 
   // Direct file URL — serves from disk, survives server restarts
   const fileSrc = buildProjectApiPath(projectId, `/renders/file/${job.filename}`);
@@ -42,6 +45,33 @@ export const RenderQueueItem = memo(function RenderQueueItem({
       a.click();
     },
     [fileSrc, job.filename],
+  );
+
+  const handleCopyToEpisodeRenders = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (copyingToEpisode) return;
+      setCopyingToEpisode(true);
+      try {
+        const res = await studioApiFetch(
+          buildProjectApiPath(projectId, "/renders/export-to-episode"),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: job.filename, jobId: job.id }),
+          },
+        );
+        if (res && res.ok) {
+          setCopiedToEpisode(true);
+          setTimeout(() => setCopiedToEpisode(false), 4000);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setCopyingToEpisode(false);
+      }
+    },
+    [copyingToEpisode, projectId, job.filename, job.id],
   );
 
   const viewSrc = fileSrc;
@@ -142,6 +172,27 @@ export const RenderQueueItem = memo(function RenderQueueItem({
               {/* The tooltip explains the control whether or not it is
                   reachable; `disabled:` on the shared Button keeps pointer
                   events alive precisely so a disabled one can still say why. */}
+              {job.filename.endsWith(".mp4") && (
+                <Tooltip
+                  label={
+                    copiedToEpisode
+                      ? `Copied to Renders/${projectId}_Draft.mp4`
+                      : isComplete
+                        ? `Copy to Episode Renders/${projectId}_Draft.mp4`
+                        : "Available when the render finishes"
+                  }
+                >
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={(e) => void handleCopyToEpisodeRenders(e)}
+                    disabled={!isComplete || copyingToEpisode}
+                    aria-label={`Copy ${job.filename} to Episode Renders`}
+                  >
+                    {copyingToEpisode ? "…" : copiedToEpisode ? "✓ Renders/" : "→ Renders/"}
+                  </Button>
+                </Tooltip>
+              )}
               <Tooltip label={isComplete ? "Download" : "Available when the render finishes"}>
                 <IconButton
                   size="sm"

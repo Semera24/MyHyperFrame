@@ -60,6 +60,10 @@ export function useNLEContext(): NLEContextValue {
   return ctx;
 }
 
+export function useOptionalNLEContext(): NLEContextValue | null {
+  return useContext(NLEContext);
+}
+
 export interface NLEProviderProps {
   projectId: string;
   refreshKey?: number;

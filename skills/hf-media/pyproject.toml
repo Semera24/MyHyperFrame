@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hf-media"
+version = "0.1.1"
+description = "HeyGen jobs through a host profile, media evidence and draft review for HyperFrames workflows"
+requires-python = ">=3.12"
+dependencies = ["numpy>=2,<3", "Pillow>=11,<13", "opencv-python-headless>=4.10,<5"]
+
+[project.scripts]
+hf-media = "hf_media.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hf_media"]
+
+# The app installs this folder with `uv pip` (main/mediaTools.mjs); uv run and sync never make a .venv inside the
+# signed app. `uv lock` refuses while this is set: flip it for the lock, then back.
+[tool.uv]
+managed = false

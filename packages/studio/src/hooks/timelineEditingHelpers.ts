@@ -118,6 +118,7 @@ export function extendRootDurationIfNeeded(newEnd: number): boolean {
 // ── Types ──
 export type { RecordEditInput } from "../utils/studioFileHistory";
 export function buildPatchTarget(element: {
+  id?: string;
   domId?: string;
   hfId?: string;
   selector?: string;
@@ -136,6 +137,16 @@ export function buildPatchTarget(element: {
   }
   if (element.selector) {
     return { selector: element.selector, selectorIndex: element.selectorIndex };
+  }
+  if (element.id) {
+    if (element.id.startsWith("hf-")) {
+      return {
+        id: element.id,
+        hfId: element.id,
+        selector: `[data-hf-id="${element.id}"], #${element.id}`,
+      };
+    }
+    return { id: element.id, selector: `#${element.id}` };
   }
   return null;
 }

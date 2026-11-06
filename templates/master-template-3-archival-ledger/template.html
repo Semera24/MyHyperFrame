@@ -1,0 +1,198 @@
+<template>
+  <div data-hf-id="hf-root" id="root" data-composition-id="{{SCENE_ID}}" data-width="1920" data-height="1080">
+    <style>
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0B141C;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      /* Archival Plate Backdrop */
+      #{{SCENE_ID}}-bg-plate {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        object-fit: cover;
+        z-index: 1;
+        will-change: transform;
+      }
+
+      #{{SCENE_ID}}-vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 60% 50%, rgba(11,20,28,0.6) 0%, rgba(11,20,28,0.92) 100%);
+        z-index: 2;
+      }
+
+      /* Secondary Cutout / Witness (Optional) */
+      #{{SCENE_ID}}-witness-cutout {
+        position: absolute;
+        right: 80px;
+        bottom: 0px;
+        width: 460px;
+        height: 760px;
+        object-fit: contain;
+        object-position: bottom right;
+        z-index: 5;
+        opacity: 0;
+      }
+
+      /* Main Document / Evidence Card */
+      #{{SCENE_ID}}-doc-card {
+        position: absolute;
+        left: 100px;
+        top: 140px;
+        width: 900px;
+        padding: 32px 36px;
+        background: rgba(15, 30, 44, 0.95);
+        border: 1px solid rgba(196, 154, 68, 0.4);
+        border-top: 6px solid #C49A44;
+        border-radius: 4px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        z-index: 10;
+        opacity: 0;
+      }
+
+      #{{SCENE_ID}}-date-badge {
+        display: inline-block;
+        background: #B83A3A;
+        color: #FFFFFF;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        padding: 6px 14px;
+        border-radius: 2px;
+        text-transform: uppercase;
+      }
+
+      #{{SCENE_ID}}-doc-title {
+        font-size: 34px;
+        font-weight: 900;
+        color: #FFFFFF;
+        margin-top: 12px;
+        line-height: 1.2;
+      }
+
+      #{{SCENE_ID}}-doc-summary {
+        font-size: 17px;
+        color: #D0DFE5;
+        margin-top: 8px;
+        line-height: 1.45;
+      }
+
+      /* Dynamic Transformation / Metric Flow */
+      #{{SCENE_ID}}-metric-flow {
+        margin-top: 24px;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .{{SCENE_ID}}-metric-box {
+        background: rgba(13, 27, 42, 0.88);
+        padding: 16px 20px;
+        border-left: 4px solid #8CA0B2;
+        border-radius: 2px;
+      }
+
+      .{{SCENE_ID}}-metric-label {
+        font-size: 13px;
+        color: #D0DFE5;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .{{SCENE_ID}}-metric-val {
+        font-size: 22px;
+        font-weight: 800;
+        color: #FFFFFF;
+        margin-top: 4px;
+      }
+
+      /* Animated Glowing Highlighter Pass */
+      #{{SCENE_ID}}-highlight-quote {
+        margin-top: 22px;
+        background: rgba(53, 127, 131, 0.2);
+        border-left: 4px solid #357F83;
+        padding: 12px 18px;
+        font-size: 16px;
+        color: #F5F0E6;
+        font-style: italic;
+        opacity: 0;
+      }
+
+      /* Verification Source Tag */
+      #{{SCENE_ID}}-source-tag {
+        position: absolute;
+        top: 40px;
+        left: 100px;
+        font-size: 13px;
+        color: #8CA0B2;
+        letter-spacing: 1px;
+        font-family: monospace;
+        z-index: 15;
+      }
+    </style>
+
+    <!-- Source tag -->
+    <div id="{{SCENE_ID}}-source-tag">{{SOURCE_ATTRIBUTION}}</div>
+
+    <!-- Backdrop -->
+    <img id="{{SCENE_ID}}-bg-plate" src="{{BG_PLATE}}" alt="Archival Document Plate">
+    <div id="{{SCENE_ID}}-vignette"></div>
+
+    <!-- Witness Cutout -->
+    <img id="{{SCENE_ID}}-witness-cutout" src="{{WITNESS_IMAGE}}" alt="Witness">
+
+    <!-- Document Card -->
+    <div id="{{SCENE_ID}}-doc-card">
+      <div id="{{SCENE_ID}}-date-badge">{{DATE_BADGE}}</div>
+      <div id="{{SCENE_ID}}-doc-title">{{DOCUMENT_TITLE}}</div>
+      <div id="{{SCENE_ID}}-doc-summary">{{DOCUMENT_SUMMARY}}</div>
+
+      <!-- Transformation Metrics -->
+      <div id="{{SCENE_ID}}-metric-flow">
+        <div class="{{SCENE_ID}}-metric-box">
+          <div class="{{SCENE_ID}}-metric-label">{{METRIC_1_LABEL}}</div>
+          <div class="{{SCENE_ID}}-metric-val">{{METRIC_1_VALUE}}</div>
+        </div>
+        <div style="font-size:26px;color:#C49A44;font-weight:900;">➔</div>
+        <div class="{{SCENE_ID}}-metric-box" style="border-left-color: #357F83;">
+          <div class="{{SCENE_ID}}-metric-label" style="color:#A0E5E8;">{{METRIC_2_LABEL}}</div>
+          <div class="{{SCENE_ID}}-metric-val">{{METRIC_2_VALUE}}</div>
+        </div>
+      </div>
+
+      <!-- Highlight Quote -->
+      <div id="{{SCENE_ID}}-highlight-quote">{{HIGHLIGHT_QUOTE}}</div>
+    </div>
+
+    <script>
+      (() => {
+        const t = gsap.timeline({ paused: true });
+        const dur = {{DURATION_SECONDS}};
+
+        // Backdrop drift
+        t.fromTo('#{{SCENE_ID}}-bg-plate', { scale: 1.0 }, { scale: 1.04, duration: dur, ease: 'none' }, 0);
+
+        // Document card entrance
+        t.fromTo('#{{SCENE_ID}}-doc-card', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out' }, 0.5);
+
+        // Witness cutout entrance on spoken name
+        t.fromTo('#{{SCENE_ID}}-witness-cutout', { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.8, ease: 'power3.out' }, {{CUE_WITNESS_SECONDS}});
+
+        // Highlight quote animated reveal
+        t.fromTo('#{{SCENE_ID}}-highlight-quote', { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power2.out' }, {{CUE_HIGHLIGHT_SECONDS}});
+
+        t.set({}, {}, dur);
+        window.__timelines = window.__timelines || {};
+        window.__timelines.{{SCENE_ID}} = t;
+      })();
+    </script>
+  </div>
+</template>

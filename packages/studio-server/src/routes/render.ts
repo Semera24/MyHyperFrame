@@ -1,15 +1,19 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
+  copyFileSync,
   createReadStream,
   existsSync,
   lstatSync,
+  mkdirSync,
   readFileSync,
+  realpathSync,
   unlinkSync,
   readdirSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { StudioApiAdapter, RenderJobState } from "../types.js";
 import { VALID_CANVAS_RESOLUTIONS, type CanvasResolution } from "@hyperframes/parsers";
@@ -363,7 +367,30 @@ export function registerRenderRoutes(api: Hono, adapter: StudioApiAdapter): void
     const project = await adapter.resolveProject(c.req.param("id"));
     if (!project) return c.json({ error: "not found" }, 404);
     const rendersDir = adapter.rendersDir(project);
-    if (!existsSync(rendersDir)) return c.json({ renders: [] });
+    let realProjectDir = project.dir;
+    try {
+      realProjectDir = realpathSync(project.dir);
+    } catch {
+      realProjectDir = project.dir;
+    }
+    const epRoot =
+      basename(realProjectDir) === "Sources" ? dirname(realProjectDir) : realProjectDir;
+    const draftPath = resolve(epRoot, "Renders", `${project.id}_Draft.mp4`);
+    const episodeDraft = existsSync(draftPath)
+      ? {
+          exists: true,
+          path: draftPath,
+          relativePath: `Renders/${project.id}_Draft.mp4`,
+          sizeBytes: statSync(draftPath).size,
+          updatedAt: statSync(draftPath).mtimeMs,
+        }
+      : {
+          exists: false,
+          path: draftPath,
+          relativePath: `Renders/${project.id}_Draft.mp4`,
+        };
+
+    if (!existsSync(rendersDir)) return c.json({ renders: [], episodeDraft });
     const files = readdirSync(rendersDir)
       .filter((f) => RENDER_EXTENSIONS.some((extension) => f.endsWith(extension)))
       .flatMap((f) => {
@@ -377,6 +404,7 @@ export function registerRenderRoutes(api: Hono, adapter: StudioApiAdapter): void
         let status: "complete" | "failed" = "complete";
         let durationMs: number | undefined;
         let audioLoweredDb: number | undefined;
+        let episodeDraftPath: string | undefined;
         if (existsSync(metaPath)) {
           try {
             const meta = JSON.parse(readFileSync(metaPath, "utf-8"));
@@ -387,6 +415,7 @@ export function registerRenderRoutes(api: Hono, adapter: StudioApiAdapter): void
             if (meta.status === "failed" && !existsSync(fp)) status = "failed";
             if (meta.durationMs) durationMs = meta.durationMs;
             if (typeof meta.audioLoweredDb === "number") audioLoweredDb = meta.audioLoweredDb;
+            if (typeof meta.episodeDraftPath === "string") episodeDraftPath = meta.episodeDraftPath;
           } catch {
             /* ignore */
           }
@@ -400,6 +429,7 @@ export function registerRenderRoutes(api: Hono, adapter: StudioApiAdapter): void
           status,
           durationMs,
           ...(audioLoweredDb !== undefined ? { audioLoweredDb } : {}),
+          ...(episodeDraftPath ? { episodeDraftPath } : {}),
         };
       })
       .sort((a, b) => b.createdAt - a.createdAt);
@@ -415,6 +445,134 @@ export function registerRenderRoutes(api: Hono, adapter: StudioApiAdapter): void
         });
       }
     }
-    return c.json({ renders: files.map(({ path: _path, ...render }) => render) });
+    return c.json({ renders: files.map(({ path: _path, ...render }) => render), episodeDraft });
+  });
+
+  // 1-Click Export / Copy Rendered MP4 to Episode `Renders/<EP_ID>_Draft.mp4`
+  api.post("/projects/:id/renders/export-to-episode", async (c) => {
+    const project = await adapter.resolveProject(c.req.param("id"));
+    if (!project) return c.json({ error: "not found" }, 404);
+
+    const body = (await c.req.json().catch(() => ({}))) as {
+      jobId?: string;
+      filename?: string;
+    };
+
+    const rendersDir = adapter.rendersDir(project);
+    let sourcePath: string | null = null;
+    let sourceFilename = "";
+
+    if (body.filename && existsSync(rendersDir)) {
+      const candidate = resolveWithinProject(rendersDir, body.filename);
+      if (candidate && existsSync(candidate)) {
+        sourcePath = candidate;
+        sourceFilename = body.filename;
+      }
+    } else if (body.jobId) {
+      const job = renderJobs.get(body.jobId);
+      if (job?.outputPath && existsSync(job.outputPath)) {
+        sourcePath = job.outputPath;
+        sourceFilename = basename(job.outputPath);
+      } else if (existsSync(rendersDir)) {
+        const candidate = resolveWithinProject(rendersDir, `${body.jobId}.mp4`);
+        if (candidate && existsSync(candidate)) {
+          sourcePath = candidate;
+          sourceFilename = `${body.jobId}.mp4`;
+        }
+      }
+    }
+
+    // If no specific jobId/filename was passed, find the most recent .mp4 render for this project
+    if (!sourcePath && existsSync(rendersDir)) {
+      const mp4Files = readdirSync(rendersDir)
+        .filter((f) => f.endsWith(".mp4"))
+        .map((f) => {
+          const fp = resolveWithinProject(rendersDir, f);
+          return fp && existsSync(fp) ? { f, fp, mtime: statSync(fp).mtimeMs } : null;
+        })
+        .filter((item): item is { f: string; fp: string; mtime: number } => item !== null)
+        .sort((a, b) => b.mtime - a.mtime);
+
+      const projectMp4 = mp4Files.find((item) => item.f.startsWith(`${project.id}_`));
+      const chosen = projectMp4 ?? mp4Files[0];
+      if (chosen) {
+        sourcePath = chosen.fp;
+        sourceFilename = chosen.f;
+      }
+    }
+
+    let realProjectDir = project.dir;
+    try {
+      realProjectDir = realpathSync(project.dir);
+    } catch {
+      realProjectDir = project.dir;
+    }
+    const epRoot =
+      basename(realProjectDir) === "Sources" ? dirname(realProjectDir) : realProjectDir;
+
+    // Fallback: if no Studio render exists yet, check Previews/*.mp4 in the episode folder
+    if (!sourcePath) {
+      const previewsDir = resolve(epRoot, "Previews");
+      if (existsSync(previewsDir)) {
+        const previewMp4s = readdirSync(previewsDir)
+          .filter((f) => f.endsWith(".mp4"))
+          .map((f) => {
+            const fp = resolve(previewsDir, f);
+            return { f, fp, mtime: statSync(fp).mtimeMs };
+          })
+          .sort((a, b) => b.mtime - a.mtime);
+        if (previewMp4s[0]) {
+          sourcePath = previewMp4s[0].fp;
+          sourceFilename = `Previews/${previewMp4s[0].f}`;
+        }
+      }
+    }
+
+    if (!sourcePath || !existsSync(sourcePath)) {
+      return c.json(
+        {
+          error: "No completed .mp4 render found yet. Click 'Export' to render this episode first.",
+        },
+        404,
+      );
+    }
+
+    const epRendersDir = resolve(epRoot, "Renders");
+    mkdirSync(epRendersDir, { recursive: true });
+    const draftFilename = `${project.id}_Draft.mp4`;
+    const draftPath = resolve(epRendersDir, draftFilename);
+    copyFileSync(sourcePath, draftPath);
+    const stat = statSync(draftPath);
+
+    // Update .meta.json sidecar if the source came from rendersDir
+    if (sourcePath.startsWith(rendersDir)) {
+      const metaPath = sourcePath.replace(/\.(mp4|webm|mov|gif)$/, ".meta.json");
+      try {
+        const existingMeta = existsSync(metaPath)
+          ? JSON.parse(readFileSync(metaPath, "utf-8"))
+          : { status: "complete" };
+        writeFileSync(
+          metaPath,
+          JSON.stringify({
+            ...existingMeta,
+            episodeDraftPath: draftPath,
+            exportedToEpisodeAt: Date.now(),
+          }),
+        );
+      } catch {
+        /* ignore sidecar error */
+      }
+    }
+
+    return c.json({
+      ok: true,
+      episodeId: project.id,
+      sourceFilename,
+      draftFilename,
+      draftPath,
+      relativeDraftPath: `Renders/${draftFilename}`,
+      sizeBytes: stat.size,
+      exportedAt: stat.mtimeMs,
+    });
   });
 }

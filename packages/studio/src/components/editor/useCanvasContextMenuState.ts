@@ -4,18 +4,22 @@
  * handler that resolves/selects the element under the pointer before opening.
  */
 import { useCallback, useEffect, useState, type RefObject } from "react";
-import type { DomEditSelection } from "./domEditing";
+import { resolveDomEditSelection, type DomEditSelection } from "./domEditing";
+import { getAllPreviewTargetsFromPointer } from "../../utils/studioPreviewHelpers";
 
 export interface CanvasContextMenuState {
   x: number;
   y: number;
   sel: DomEditSelection;
+  layersUnderCursor?: DomEditSelection[];
 }
 
 interface UseCanvasContextMenuStateParams {
   selection: DomEditSelection | null;
   selectionRef: RefObject<DomEditSelection | null>;
   hoverSelectionRef: RefObject<DomEditSelection | null>;
+  iframeRef?: RefObject<HTMLIFrameElement | null>;
+  activeCompositionPathRef?: RefObject<string | null>;
   onCanvasPointerMoveRef: RefObject<
     (
       event: React.PointerEvent<HTMLDivElement>,
@@ -31,6 +35,8 @@ export function useCanvasContextMenuState({
   selection,
   selectionRef,
   hoverSelectionRef,
+  iframeRef,
+  activeCompositionPathRef,
   onCanvasPointerMoveRef,
   onSelectionChangeRef,
 }: UseCanvasContextMenuStateParams): {
@@ -83,9 +89,44 @@ export function useCanvasContextMenuState({
       }
 
       if (!activeSel) return;
-      setContextMenu({ x: event.clientX, y: event.clientY, sel: activeSel });
+      const layersUnderCursor: DomEditSelection[] = [];
+      const seenElements = new Set<HTMLElement>();
+      const iframe = iframeRef?.current ?? null;
+      const activeCompPath = activeCompositionPathRef?.current ?? null;
+      if (iframe) {
+        const hitElements = getAllPreviewTargetsFromPointer(
+          iframe,
+          event.clientX,
+          event.clientY,
+          activeCompPath,
+          { includeFullBleedContent: true },
+        );
+        for (const el of hitElements) {
+          const resolved = resolveDomEditSelection(el, { activeCompositionPath: activeCompPath });
+          if (resolved && !seenElements.has(resolved.element)) {
+            seenElements.add(resolved.element);
+            layersUnderCursor.push(resolved);
+          }
+        }
+      }
+      if (!seenElements.has(activeSel.element)) {
+        layersUnderCursor.unshift(activeSel);
+      }
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        sel: activeSel,
+        layersUnderCursor,
+      });
     },
-    [selectionRef, hoverSelectionRef, onCanvasPointerMoveRef, onSelectionChangeRef],
+    [
+      selectionRef,
+      hoverSelectionRef,
+      iframeRef,
+      activeCompositionPathRef,
+      onCanvasPointerMoveRef,
+      onSelectionChangeRef,
+    ],
   );
 
   return { contextMenu, closeContextMenu, handleContextMenu };

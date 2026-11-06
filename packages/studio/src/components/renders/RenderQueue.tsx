@@ -426,8 +426,12 @@ function FormatExportButton({
         // (AE3), which is exactly what it used to do.
         className="w-full"
       >
-        {isRendering ? "Rendering…" : "Export"}
+        {isRendering ? "Rendering…" : "Export & Sync to Episode Renders/"}
       </Button>
+      <p className="text-[10px] text-emerald-300/90 font-mono leading-tight">
+        ✓ MP4 renders automatically copy to Episode{" "}
+        <code className="text-emerald-200">Renders/&lt;EP_ID&gt;_Draft.mp4</code>
+      </p>
       <RenderDurationNote durationMs={lastRenderDurationMs} isRendering={isRendering} />
     </div>
   );

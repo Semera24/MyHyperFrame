@@ -30,6 +30,25 @@ const FULL_BLEED_RATIO = 0.95;
 // resolves through the video to nothing and only the hover fallback recovers).
 const FULL_BLEED_SELECTABLE_MEDIA_TAGS = new Set(["video", "img", "canvas", "svg"]);
 
+const DECORATIVE_OVERLAY_CLASSES = new Set([
+  "wash-dark",
+  "wash-vignette",
+  "vignette",
+  "grain",
+  "scanlines",
+  "noise-overlay",
+]);
+
+export function isDecorativeOverlayElement(el: HTMLElement): boolean {
+  if (el.hasAttribute("data-decorative")) return true;
+  const role = el.getAttribute("data-timeline-role");
+  if (role === "overlay" || role === "persistent-overlay") return true;
+  for (const cls of Array.from(el.classList)) {
+    if (DECORATIVE_OVERLAY_CLASSES.has(cls)) return true;
+  }
+  return false;
+}
+
 export function coversComposition(
   elRect: { width: number; height: number },
   viewport: DomEditViewport,
@@ -42,6 +61,7 @@ export function coversComposition(
 }
 
 function isFullBleedTarget(el: HTMLElement, viewport: DomEditViewport): boolean {
+  if (isDecorativeOverlayElement(el)) return true;
   if (FULL_BLEED_SELECTABLE_MEDIA_TAGS.has(el.tagName.toLowerCase())) return false;
   return coversComposition(el.getBoundingClientRect(), viewport);
 }
@@ -235,6 +255,7 @@ export function getAllPreviewTargetsFromPointer(
   clientX: number,
   clientY: number,
   activeCompositionPath: string | null,
+  options?: { includeFullBleedContent?: boolean },
 ): HTMLElement[] {
   let doc: Document | null = null;
   let win: Window | null = null;
@@ -249,17 +270,25 @@ export function getAllPreviewTargetsFromPointer(
   const localPointer = resolvePreviewLocalPointer(iframe, doc, win, clientX, clientY);
   if (!localPointer) return [];
 
+  const shouldExclude = (el: HTMLElement) => {
+    if (isDecorativeOverlayElement(el)) return true;
+    if (options?.includeFullBleedContent) {
+      return el.hasAttribute("data-composition-id");
+    }
+    return isFullBleedTarget(el, localPointer.viewport);
+  };
+
   if (typeof doc.elementsFromPoint === "function") {
     const elements = doc.elementsFromPoint(localPointer.x, localPointer.y);
     return filterAuthorInteractiveTargets(elements, activeCompositionPath).filter(
-      (el) => !isFullBleedTarget(el, localPointer.viewport),
+      (el) => !shouldExclude(el),
     );
   }
   const fallback = getEventTargetElement(doc.elementFromPoint(localPointer.x, localPointer.y));
   if (!fallback || !getDomLayerPatchTarget(fallback, activeCompositionPath)) return [];
   if (hasAuthorPointerEventsNone(fallback)) return [];
   if (!isElementComputedVisible(fallback)) return [];
-  if (isFullBleedTarget(fallback, localPointer.viewport)) return [];
+  if (shouldExclude(fallback)) return [];
   return [fallback];
 }
 

@@ -94,22 +94,50 @@ function collectHostDomChildren(
   parentMap: Map<string, string>,
   out: DomClipChild[],
 ): void {
+  const SKIP_TAGS = new Set([
+    "script",
+    "style",
+    "link",
+    "meta",
+    "defs",
+    "template",
+    "noscript",
+    "span",
+    "strong",
+    "em",
+    "b",
+    "i",
+    "br",
+    "small",
+    "sub",
+    "sup",
+  ]);
   for (const child of Array.from(parentEl.children)) {
-    if (!child.id) {
+    const tag = child.tagName.toLowerCase();
+    if (SKIP_TAGS.has(tag)) continue;
+    const childId = child.id || child.getAttribute("data-hf-id");
+    if (!childId) {
       collectHostDomChildren(hostId, child, parentId, parentMap, out); // id-less wrapper
       continue;
     }
     const isGroup = child.hasAttribute("data-hf-group");
+    const hasHfDescendants =
+      tag !== "svg" &&
+      (child.hasAttribute("data-hf-id") || child.querySelector("[data-hf-id]") !== null);
     out.push({
-      id: child.id,
+      id: childId,
       parentId,
       hostId,
-      label: isGroup ? child.getAttribute("data-hf-group") || child.id : child.id,
+      label: isGroup
+        ? child.getAttribute("data-hf-group") || childId
+        : child.getAttribute("data-timeline-label") || child.getAttribute("alt") || childId,
       stackingContextId: resolveCssStackingContextId(child),
       ...readChildAudioGroupState(child),
     });
-    parentMap.set(child.id, parentId);
-    if (isGroup) collectHostDomChildren(hostId, child, child.id, parentMap, out);
+    parentMap.set(childId, parentId);
+    if (isGroup || (hasHfDescendants && child.children.length > 0)) {
+      collectHostDomChildren(hostId, child, childId, parentMap, out);
+    }
   }
 }
 

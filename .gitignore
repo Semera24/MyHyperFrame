@@ -201,3 +201,9 @@ chrome/
 # Python bytecode from running skill scripts
 __pycache__/
 *.pyc
+
+# Studio Local Project Symlinks & Runtime logs
+data/
+packages/studio/data/
+*.log
+

@@ -34,6 +34,14 @@ import {
   type ZOrderPatch,
 } from "./canvasContextMenuZOrder";
 import { menuClasses } from "../ui/menuStyle";
+import { useOptionalNLEContext } from "../nle/NLEContext";
+import { useCropPresetBarStore } from "./cropPresetStore";
+import {
+  detectUnbundleCandidate,
+  groupSelectedElementsIntoLayer,
+  unbundleElementContainer,
+} from "../../utils/studioLayerActions";
+import { usePlayerStore } from "../../player";
 
 interface CanvasContextMenuProps {
   /** Viewport x of the right-click event. */
@@ -75,6 +83,10 @@ interface CanvasContextMenuProps {
    * the Delete item is then hidden rather than shown as a silent no-op.
    */
   onDelete?: (selection: DomEditSelection) => void;
+  /** All selectable layers stacked under the right-click cursor (topmost first). */
+  layersUnderCursor?: DomEditSelection[];
+  /** Select a specific layer from the stack under the cursor. */
+  onSelectLayer?: (selection: DomEditSelection) => void;
 }
 
 type ZAction = "bring-forward" | "send-backward" | "bring-to-front" | "send-to-back";
@@ -145,6 +157,8 @@ export const CanvasContextMenu = memo(function CanvasContextMenu({
   onApplyZIndex,
   onZOrderCrossed,
   onDelete,
+  layersUnderCursor,
+  onSelectLayer,
 }: CanvasContextMenuProps) {
   const menuRef = useContextMenuDismiss(onClose);
 
@@ -153,20 +167,35 @@ export const CanvasContextMenu = memo(function CanvasContextMenu({
   // a z-write reverts on reload and Delete silently no-ops. Hide the group
   // instead. If nothing is actionable (a legacy mount with no handlers at all),
   // don't render the menu — an empty menu is itself a dead-end.
+  const hasLayerPicker = Boolean(
+    onSelectLayer && layersUnderCursor && layersUnderCursor.length > 1,
+  );
   const hasZActions = Boolean(onApplyZIndex);
   const hasDelete = Boolean(onDelete);
   const hasDivider = hasZActions && hasDelete;
+  const hasLayerDivider = hasLayerPicker && (hasZActions || hasDelete);
 
   // Overflow correction — match ClipContextMenu approach. Only the rendered
   // groups contribute height (keeps positioning correct when a group is hidden).
-  const menuWidth = 200;
+  const menuWidth = 220;
+  const layerPickerHeight = hasLayerPicker ? 22 + (layersUnderCursor?.length ?? 0) * 26 : 0;
   const menuHeight =
-    8 + (hasZActions ? Z_ACTIONS.length * 28 : 0) + (hasDivider ? 1 : 0) + (hasDelete ? 28 : 0) + 8; // padding + items + divider + delete + padding
+    8 +
+    layerPickerHeight +
+    (hasLayerDivider ? 1 : 0) +
+    (hasZActions ? Z_ACTIONS.length * 28 : 0) +
+    (hasDivider ? 1 : 0) +
+    (hasDelete ? 28 : 0) +
+    8; // padding + items + divider + delete + padding
   const overflowY = y + menuHeight - window.innerHeight;
   const adjustedX = x + menuWidth > window.innerWidth ? x - menuWidth : x;
   const adjustedY = overflowY > 0 ? y - overflowY - 8 : y;
 
   const el = selection.element;
+  const nle = useOptionalNLEContext();
+  const activeCompPath = nle?.compositionStack.at(-1)?.filePath ?? null;
+  const unbundleCandidate = nle ? detectUnbundleCandidate(el) : null;
+  const hasCropAndUnbundle = Boolean(nle);
 
   function handleZAction(action: ZAction) {
     if (!onApplyZIndex) return;
@@ -191,7 +220,7 @@ export const CanvasContextMenu = memo(function CanvasContextMenu({
     onClose();
   }
 
-  if (!hasZActions && !hasDelete) return null;
+  if (!hasLayerPicker && !hasZActions && !hasDelete) return null;
 
   // The menu is portaled to document.body, but in the React tree it is still a
   // child of the DomEditOverlay <div>. React synthetic events bubble through the
@@ -221,6 +250,43 @@ export const CanvasContextMenu = memo(function CanvasContextMenu({
         e.stopPropagation();
       }}
     >
+      {hasLayerPicker && layersUnderCursor && (
+        <div className="py-0.5">
+          <div className="px-3 py-1 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
+            Select Layer ({layersUnderCursor.length})
+          </div>
+          {layersUnderCursor.map((layer) => {
+            const isCurrent = layer.element === selection.element;
+            const displayLabel = layer.id ? `#${layer.id}` : layer.label || layer.tagName;
+            return (
+              <button
+                key={layer.hfId ?? layer.selector ?? displayLabel}
+                type="button"
+                className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs text-left cursor-pointer ${
+                  isCurrent
+                    ? "bg-studio-accent/15 text-studio-accent font-medium"
+                    : "text-neutral-300 hover:bg-neutral-800"
+                }`}
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSelectLayer?.(layer);
+                  onClose();
+                }}
+              >
+                <span className="truncate">{displayLabel}</span>
+                <span className="shrink-0 text-[10px] text-neutral-500 uppercase">
+                  {layer.tagName}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {hasLayerDivider && <div className={menuClasses.divider} />}
+
       {hasZActions &&
         Z_ACTIONS.map(({ action, label }) => {
           const enabled = isZOrderActionEnabled(el, action);
@@ -252,6 +318,84 @@ export const CanvasContextMenu = memo(function CanvasContextMenu({
             </button>
           );
         })}
+
+      {hasCropAndUnbundle && (
+        <>
+          <div className={menuClasses.divider} />
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 cursor-pointer text-left"
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              e.stopPropagation();
+              useCropPresetBarStore.getState().open({
+                hfId: selection.hfId,
+                id: selection.id,
+              });
+              onClose();
+            }}
+          >
+            <span>Crop Layer…</span>
+          </button>
+          {nle && (
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 cursor-pointer text-left"
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const doc = el.ownerDocument;
+                const selectedIds = usePlayerStore.getState().selectedElementIds ?? [];
+                const targetEls: HTMLElement[] = [];
+                if (doc && selectedIds.length > 1) {
+                  for (const id of selectedIds) {
+                    const found =
+                      doc.getElementById(id) ??
+                      doc.querySelector<HTMLElement>(`[data-hf-id="${id}"]`);
+                    if (found && !targetEls.includes(found)) targetEls.push(found);
+                  }
+                }
+                if (targetEls.length === 0) targetEls.push(el);
+                void groupSelectedElementsIntoLayer({
+                  elements: targetEls,
+                  projectId: nle.projectId,
+                  activeCompPath,
+                  reloadPreview: nle.refreshPlayer,
+                });
+                onClose();
+              }}
+            >
+              <span>Group Selected into Layer</span>
+              <span className="text-neutral-500 text-[10px] ml-2">⌘G</span>
+            </button>
+          )}
+          {unbundleCandidate && nle && (
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-amber-300 hover:bg-neutral-800 cursor-pointer text-left"
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                void unbundleElementContainer({
+                  element: el,
+                  projectId: nle.projectId,
+                  activeCompPath,
+                  reloadPreview: nle.refreshPlayer,
+                });
+                onClose();
+              }}
+            >
+              <span>Unbundle into Free Layers</span>
+              <span className="text-[10px] text-amber-400/80 ml-2">
+                {unbundleCandidate.children.length}
+              </span>
+            </button>
+          )}
+        </>
+      )}
 
       {hasDivider && <div className={menuClasses.divider} />}
 

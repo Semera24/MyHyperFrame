@@ -1,0 +1,93 @@
+{
+  "provenance": {
+    "source": "heygen-com/experiment-framework origin/master 637c7ab: heygen/services/third_party_images/dto.py, movio/api_service/app/service/images_v3.py",
+    "checked_at": "2026-10-06",
+    "kind": "backend-DTO-derived structural contract; route hidden from public docs",
+    "notes": [
+      "Synchronous: generation runs inside the POST; GET /v3/images/{id} re-reads the generation.",
+      "Idempotency-Key is required; the same key with a different body or while running answers 409.",
+      "Auth: x-api-key (OAuth tokens get 403 api_key_required) with images:write / images:read; charged to HeyGen API credits; 402 insufficient_credit before any vendor call.",
+      "A non-empty reference_images makes the request an edit. At most 16 references for gpt-image-2.5 and 14 for nano-banana-2.",
+      "gpt-image-2.5 aspect ratios: 1:1, 16:9, 9:16, 4:3, 3:4; nano-banana-2 also 3:2, 2:3, 21:9. 16:9 when omitted. No seed field.",
+      "Prompt at most 32000 characters. Image URLs in responses expire."
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["model", "prompt"],
+    "properties": {
+      "model": {
+        "type": "string",
+        "enum": ["gpt-image-2.5", "nano-banana-2"]
+      },
+      "prompt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32000
+      },
+      "num_images": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4,
+        "default": 1
+      },
+      "aspect_ratio": {
+        "type": "string",
+        "enum": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9"]
+      },
+      "reference_images": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "url"],
+              "properties": {
+                "type": {
+                  "const": "url"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Publicly accessible HTTPS URL"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "asset_id"],
+              "properties": {
+                "type": {
+                  "const": "asset_id"
+                },
+                "asset_id": {
+                  "type": "string",
+                  "description": "HeyGen asset ID from /v3/assets"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "media_type", "data"],
+              "properties": {
+                "type": {
+                  "const": "base64"
+                },
+                "media_type": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

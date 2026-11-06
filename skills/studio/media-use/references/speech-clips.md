@@ -1,0 +1,3 @@
+# Speech in long Video 1 clips
+
+With speech, give each line its own segment, 5 to 13 s (the last up to 15) sized at about 3 words a second plus 1 s, the line quoted in its segment, so no line is cut by a join. To speak in a chosen voice (the person's own), make each line first with voice.generateVoiceover and name it as that segment's audio (an mp3, wav or m4a of at most 11.5 s), and still quote that line's exact words in the segment: the clip does not play the recording, it says the quoted words in the recording's voice with matching lips, its length set from the audio; that segment needs the person's photo in references. Each spoken segment after the first opens on a cut to a new angle, so pack consecutive lines into one segment's audio, up to 11.5 s, for fewer cuts.

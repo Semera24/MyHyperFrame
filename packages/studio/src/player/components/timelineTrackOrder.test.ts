@@ -84,6 +84,29 @@ describe("buildStackingTimelineLayers", () => {
     expect(rowIds(result.visualLayers)).toEqual([["a", "b"]]);
   });
 
+  it("keeps distinct track indices on separate lanes even when zIndex is 0 and times do not overlap", () => {
+    const result = buildStackingTimelineLayers([
+      rowElement({
+        id: "layer-1",
+        track: 1,
+        zIndex: 0,
+        hasExplicitZIndex: false,
+        start: 0,
+        duration: 2,
+      }),
+      rowElement({
+        id: "layer-2",
+        track: 2,
+        zIndex: 0,
+        hasExplicitZIndex: false,
+        start: 3,
+        duration: 2,
+      }),
+    ]);
+
+    expect(rowIds(result.visualLayers)).toEqual([["layer-1"], ["layer-2"]]);
+  });
+
   it("does not merge equal z-index clips across stacking contexts", () => {
     const result = buildStackingTimelineLayers([
       rowElement({ id: "root", zIndex: 4, start: 0, duration: 1 }),
