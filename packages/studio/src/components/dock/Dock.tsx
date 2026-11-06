@@ -135,6 +135,27 @@ function restoreOrBuild(api: DockviewApi, projectId: string | null, options: Doc
   if (stored) {
     try {
       api.fromJSON(stored);
+      // Ensure essential creation panels (transitions & motion) are present
+      if (!api.getPanel("transitions")) {
+        const ref = api.getPanel("compositions") ? "compositions" : undefined;
+        addRegisteredPanel(
+          api,
+          "transitions",
+          ref ? { referencePanel: "compositions", direction: "within" } : undefined,
+        );
+      }
+      if (!api.getPanel("motion")) {
+        const ref = api.getPanel("transitions")
+          ? "transitions"
+          : api.getPanel("compositions")
+            ? "compositions"
+            : undefined;
+        addRegisteredPanel(
+          api,
+          "motion",
+          ref ? { referencePanel: ref, direction: "within" } : undefined,
+        );
+      }
       return;
     } catch {
       /* a layout the schema accepted but dockview cannot load: start over */

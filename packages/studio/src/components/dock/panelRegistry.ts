@@ -4,6 +4,8 @@ export const PANEL_IDS = [
   "preview",
   "timeline",
   "compositions",
+  "transitions",
+  "motion",
   "assets",
   "code",
   "catalog",
@@ -43,9 +45,19 @@ export const PANEL_DEFINITIONS = {
     keepMounted: true,
   },
   compositions: {
-    title: "Compositions",
+    title: "Media",
     zone: "left",
     reopen: { near: "preview", direction: "left" },
+  },
+  transitions: {
+    title: "🔀 Transitions",
+    zone: "left",
+    reopen: { near: "compositions", direction: "within" },
+  },
+  motion: {
+    title: "✨ Motion",
+    zone: "left",
+    reopen: { near: "compositions", direction: "within" },
   },
   assets: { title: "Assets", zone: "left", reopen: { near: "compositions", direction: "within" } },
   code: { title: "Code", zone: "left", reopen: { near: "compositions", direction: "within" } },
@@ -54,7 +66,7 @@ export const PANEL_DEFINITIONS = {
     zone: "left",
     reopen: { near: "compositions", direction: "within" },
   },
-  design: { title: "Design", zone: "right", reopen: { near: "preview", direction: "right" } },
+  design: { title: "Inspector", zone: "right", reopen: { near: "preview", direction: "right" } },
   layers: { title: "Layers", zone: "right", reopen: { near: "design", direction: "within" } },
   assistant: {
     title: "🤖 Assistant",

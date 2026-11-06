@@ -37,6 +37,11 @@ import {
   STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR,
   STUDIO_MOTION_ORIGINAL_OPACITY_ATTR,
   STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR,
+  STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR,
+  STUDIO_MOTION_ORIGINAL_FILTER_ATTR,
+  STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR,
+  STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR,
+  STUDIO_MOTION_ORIGINAL_COLOR_ATTR,
 } from "./studioMotionTypes";
 
 /* ── Shared helpers ──────────────────────────────────────────────── */
@@ -188,6 +193,11 @@ const MOTION_ORIG_ATTRS = [
   STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR,
   STUDIO_MOTION_ORIGINAL_OPACITY_ATTR,
   STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR,
+  STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR,
+  STUDIO_MOTION_ORIGINAL_FILTER_ATTR,
+  STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR,
+  STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR,
+  STUDIO_MOTION_ORIGINAL_COLOR_ATTR,
 ] as const;
 
 export function buildMotionPatches(element: HTMLElement): PatchOperation[] {
@@ -200,11 +210,24 @@ export function buildMotionPatches(element: HTMLElement): PatchOperation[] {
   return ops;
 }
 
-export function buildClearMotionPatches(_element: HTMLElement): PatchOperation[] {
-  return [
+export function buildClearMotionPatches(element: HTMLElement): PatchOperation[] {
+  const ops: PatchOperation[] = [
     { type: "attribute", property: STUDIO_MOTION_ATTR, value: null },
     { type: "attribute", property: STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR, value: null },
     { type: "attribute", property: STUDIO_MOTION_ORIGINAL_OPACITY_ATTR, value: null },
     { type: "attribute", property: STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR, value: null },
   ];
+  const extraAttrs = [
+    STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR,
+    STUDIO_MOTION_ORIGINAL_FILTER_ATTR,
+    STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR,
+    STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR,
+    STUDIO_MOTION_ORIGINAL_COLOR_ATTR,
+  ] as const;
+  for (const attr of extraAttrs) {
+    if (element.hasAttribute(attr)) {
+      ops.push({ type: "attribute", property: attr, value: null });
+    }
+  }
+  return ops;
 }

@@ -138,7 +138,8 @@ export function useDomSelection({
       if (isRepeatedSingleSelection) {
         if (options?.revealPanel !== false) {
           setRightCollapsed(false);
-          if (rightPanelTabRef.current !== "variables") setRightPanelTab("design");
+          if (rightPanelTabRef.current !== "variables" && rightPanelTabRef.current !== "motion")
+            setRightPanelTab("design");
         }
         return;
       }
@@ -184,9 +185,9 @@ export function useDomSelection({
       if (nextSelection) {
         if (options?.revealPanel !== false) {
           setRightCollapsed(false);
-          // Keep the Variables tab in place — selecting elements is part of the bind
+          // Keep the Variables or Motion tab in place — selecting elements is part of the
           // flow there; yanking to Design would lose the context.
-          if (rightPanelTabRef.current !== "variables") {
+          if (rightPanelTabRef.current !== "variables" && rightPanelTabRef.current !== "motion") {
             setRightPanelTab("design");
           }
         }

@@ -7,6 +7,15 @@ export const STUDIO_MOTION_ATTR = "data-hf-studio-motion";
 export const STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR = "data-hf-studio-motion-original-transform";
 export const STUDIO_MOTION_ORIGINAL_OPACITY_ATTR = "data-hf-studio-motion-original-opacity";
 export const STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR = "data-hf-studio-motion-original-visibility";
+export const STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR = "data-hf-studio-motion-original-clip-path";
+export const STUDIO_MOTION_ORIGINAL_FILTER_ATTR = "data-hf-studio-motion-original-filter";
+export const STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR = "data-hf-studio-motion-original-bg-color";
+export const STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR =
+  "data-hf-studio-motion-original-border-color";
+export const STUDIO_MOTION_ORIGINAL_COLOR_ATTR = "data-hf-studio-motion-original-color";
+
+export type StudioMotionCategory = "entrance" | "emphasis" | "exit" | "path" | "transition";
+export type StudioMotionStylePreset = "subtle" | "documentary" | "energetic";
 
 export interface StudioMotionTarget {
   sourceFile: string;
@@ -19,9 +28,41 @@ export interface StudioGsapMotionValues {
   x?: number;
   y?: number;
   scale?: number;
+  scaleX?: number;
+  scaleY?: number;
   rotation?: number;
   opacity?: number;
   autoAlpha?: number;
+  clipPath?: string;
+  filter?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  color?: string;
+}
+
+export interface StudioMotionKeyframe {
+  progress: number;
+  values: StudioGsapMotionValues;
+  ease?: string;
+}
+
+export interface StudioMotionPathPoint {
+  x: number;
+  y: number;
+}
+
+export interface StudioMotionPathConfig {
+  type: "line" | "arc" | "curve" | "turn" | "custom";
+  points: StudioMotionPathPoint[];
+  reverse?: boolean;
+}
+
+export interface StudioSceneTransitionConfig {
+  fromSceneId: string;
+  toSceneId: string;
+  cutTime: number;
+  type: "cut" | "crossfade" | "push" | "wipe" | "reveal" | "split" | "zoom" | "morph";
+  direction?: StudioGsapMotionDirection;
 }
 
 export interface StudioGsapCustomEase {
@@ -37,19 +78,40 @@ export interface StudioCustomEaseControlPoints {
 }
 
 export interface StudioGsapMotion {
+  id?: string;
+  name?: string;
+  presetId?: string;
+  category?: StudioMotionCategory;
+  stylePreset?: StudioMotionStylePreset;
   kind: "gsap-motion";
   target: StudioMotionTarget;
   start: number;
   duration: number;
+  delay?: number;
+  holdDuration?: number;
+  direction?: StudioGsapMotionDirection;
+  distance?: number;
   ease: string;
   customEase?: StudioGsapCustomEase;
   from: StudioGsapMotionValues;
   to: StudioGsapMotionValues;
+  keyframes?: StudioMotionKeyframe[];
+  motionPath?: StudioMotionPathConfig;
+  transition?: StudioSceneTransitionConfig;
+  order?: number;
   updatedAt?: string;
 }
 
 export type StudioGsapMotionPreset = "fade-up" | "slide" | "pop";
-export type StudioGsapMotionDirection = "up" | "down" | "left" | "right";
+export type StudioGsapMotionDirection =
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "in"
+  | "out"
+  | "cw"
+  | "ccw";
 
 export const STUDIO_GSAP_EASE_OPTIONS = [
   "none",
@@ -165,4 +227,6 @@ export type StudioMotionWindow = Window & {
   __timelines?: Record<string, StudioGsapTimeline | undefined>;
   __hfStudioMotionApply?: () => number;
   __hfStudioMotionWrapped?: boolean;
+  __hfStudioMotionManifest?: StudioMotionManifest;
+  __hfStudioMotionActiveComp?: string | null;
 };

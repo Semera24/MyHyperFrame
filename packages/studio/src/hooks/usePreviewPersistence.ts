@@ -8,7 +8,12 @@ import {
   afterStudioManualEditGestures,
   isStudioManualEditGestureLiveIn,
 } from "../components/editor/manualEditsDom";
-import { STUDIO_MOTION_PATH } from "../components/editor/studioMotion";
+import {
+  STUDIO_MOTION_PATH,
+  applyStudioMotionManifest,
+  parseStudioMotionManifest,
+} from "../components/editor/studioMotion";
+import { useStudioMotionStore } from "../components/editor/useStudioMotionStore";
 import { markScenesStale } from "../player/sceneSwap";
 import { createDomEditSaveQueue, type DomEditSaveDrainResult } from "../utils/domEditSaveQueue";
 import {
@@ -87,22 +92,44 @@ export async function drainStudioSaveQueues(
   return waitForDomQueue();
 }
 
-// fallow-ignore-next-line complexity
-async function clearLegacyStudioMotionFile(
+async function loadAndApplyStudioMotionFile(
   readOptionalProjectFile: (path: string) => Promise<string>,
-  writeProjectFile: (path: string, content: string) => Promise<void>,
+  iframe: HTMLIFrameElement | null,
+  activeCompPath: string | null,
 ): Promise<void> {
+  if (!iframe) return;
+  const doc = readIframeDocument(iframe);
+  if (!doc) return;
   const content = await readOptionalProjectFile(STUDIO_MOTION_PATH).catch(() => null);
-  if (!content) return;
-  try {
-    const parsed = JSON.parse(content) as { motions?: unknown[] };
-    if (!Array.isArray(parsed.motions) || parsed.motions.length === 0) return;
-  } catch {
+  const safeContent = content ?? "";
+  if (safeContent.trim().length > 0) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("hf:studio-motion-updated", {
+          detail: { content: safeContent },
+        }),
+      );
+    }
+    const manifest = parseStudioMotionManifest(safeContent);
+    if (manifest.motions.length > 0) {
+      applyStudioMotionManifest(
+        doc,
+        manifest,
+        activeCompPath,
+        usePlayerStore.getState().currentTime,
+      );
+    }
     return;
   }
-  await writeProjectFile(STUDIO_MOTION_PATH, JSON.stringify({ version: 1, motions: [] })).catch(
-    () => {},
-  );
+  const storeManifest = useStudioMotionStore.getState().manifest;
+  if (storeManifest.motions.length > 0) {
+    applyStudioMotionManifest(
+      doc,
+      storeManifest,
+      activeCompPath,
+      usePlayerStore.getState().currentTime,
+    );
+  }
 }
 
 // ── Hook ──
@@ -197,8 +224,18 @@ export function usePreviewPersistence({
   const applyStudioManualEditsToPreview = useCallback(
     async (iframe: HTMLIFrameElement | null = previewIframeRef.current) => {
       applyCurrentStudioManualEditsToPreview(iframe);
+      await loadAndApplyStudioMotionFile(
+        _readOptionalProjectFile,
+        iframe,
+        activeCompPathRef.current,
+      );
     },
-    [applyCurrentStudioManualEditsToPreview, previewIframeRef],
+    [
+      _readOptionalProjectFile,
+      activeCompPathRef,
+      applyCurrentStudioManualEditsToPreview,
+      previewIframeRef,
+    ],
   );
   applyStudioManualEditsToPreviewRef.current = applyStudioManualEditsToPreview;
 
@@ -212,6 +249,31 @@ export function usePreviewPersistence({
 
   const syncHistoryPreviewAfterApply = useCallback(
     async (restore: HistoryPreviewRestore) => {
+      const paths = restore.paths ?? Object.keys(restore.files ?? {});
+      if (paths.includes(STUDIO_MOTION_PATH)) {
+        const doc = previewIframeRef.current ? readIframeDocument(previewIframeRef.current) : null;
+        const restoredContent =
+          restore.files?.[STUDIO_MOTION_PATH]?.restored ??
+          (await _readOptionalProjectFile(STUDIO_MOTION_PATH).catch(() => ""));
+        if (doc) {
+          const manifest = parseStudioMotionManifest(restoredContent);
+          applyStudioMotionManifest(
+            doc,
+            manifest,
+            activeCompPathRef.current,
+            usePlayerStore.getState().currentTime,
+          );
+          installManualEditReapply(previewIframeRef.current!);
+        }
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("hf:studio-motion-updated", {
+              detail: { content: restoredContent },
+            }),
+          );
+        }
+        if (paths.length === 1) return;
+      }
       // Prefer an in-place soft reload for a soft-reloadable restore (the change
       // is confined to the active comp's element attributes / inline-style and/or
       // its GSAP script) — a full iframe remount blanks the frame black and
@@ -233,7 +295,6 @@ export function usePreviewPersistence({
       );
       const held = heldPreviewDoc();
       if (held) {
-        const paths = restore.paths ?? Object.keys(restore.files ?? {});
         afterStudioManualEditGestures(held, () => {
           markScenesStale(previewIframeRef.current, paths);
           reloadPreview();
@@ -255,13 +316,14 @@ export function usePreviewPersistence({
       // reload. The full path above waits for the reloaded preview to report instead.
       syncStoredAutomationFromPreview(previewIframeRef.current?.contentDocument ?? null);
     },
-    [previewIframeRef, activeCompPathRef, reloadPreview, heldPreviewDoc],
+    [_readOptionalProjectFile, previewIframeRef, activeCompPathRef, reloadPreview, heldPreviewDoc],
   );
 
   // A restore the server has not confirmed yet: in place now, or not at all. A GSAP script re-run is not
   // synchronous, and a pending save would land under it.
   const showHistoryRestoreNow = useCallback(
     (files: RestoreFiles): (() => void) | null => {
+      if (STUDIO_MOTION_PATH in files) return null;
       if (!domEditSaveQueueRef.current?.isIdle() || hasStudioPendingEdits() || heldPreviewDoc())
         return null;
       const iframe = previewIframeRef.current;
@@ -277,14 +339,13 @@ export function usePreviewPersistence({
     [previewIframeRef, activeCompPathRef, syncHistoryPreviewAfterApply, heldPreviewDoc],
   );
 
-  // ── Migrate legacy studio-motion.json ──
-  // Projects that used the old JSON-file approach may still have a populated
-  // studio-motion.json in the project's .hyperframes folder. The studio no longer reads it, but
-  // the legacy render-script injection in `preview.ts` / `vite.studioMotion.ts`
-  // could still fire alongside the new seek-reapply runtime. Empty the file so
-  // the legacy codepath no-ops.
   useMountEffect(() => {
-    void clearLegacyStudioMotionFile(_readOptionalProjectFile, _writeProjectFile);
+    void _writeProjectFile;
+    void loadAndApplyStudioMotionFile(
+      _readOptionalProjectFile,
+      previewIframeRef.current,
+      activeCompPathRef.current,
+    );
   });
 
   return {

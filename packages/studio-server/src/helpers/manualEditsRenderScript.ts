@@ -148,37 +148,106 @@ function studioPositionSeekReapplyRuntime(): void {
       const el = motionEls[i] as HTMLElement;
       if (!(el instanceof HTMLElement)) continue;
       const json = el.getAttribute(MOTION_ATTR);
-      if (!json) continue;
+      if (!json || json === "true") continue;
       try {
-        const m = JSON.parse(json) as Record<string, unknown>;
-        const start = finiteNum(m.start);
-        const duration = finiteNum(m.duration);
-        if (start == null || duration == null || duration <= 0) continue;
-        const ease = typeof m.ease === "string" ? m.ease : "none";
-        const from = (m.from && typeof m.from === "object" ? m.from : {}) as Record<
-          string,
-          unknown
-        >;
-        const to = (m.to && typeof m.to === "object" ? m.to : {}) as Record<string, unknown>;
-        const customEase = m.customEase as { id?: string; data?: string } | null | undefined;
-        let resolvedEase = ease;
-        if (customEase?.id && customEase?.data && win.CustomEase?.create) {
-          try {
-            gsap.registerPlugin?.(win.CustomEase);
-            win.CustomEase.create(customEase.id, customEase.data);
-            resolvedEase = customEase.id;
-          } catch {
-            /* use default ease */
+        const parsed = JSON.parse(json) as Record<string, unknown>;
+        const rawList = Array.isArray(parsed.motions) ? parsed.motions : [parsed];
+        const validMotions = rawList
+          .filter((item): item is Record<string, unknown> =>
+            Boolean(item && typeof item === "object"),
+          )
+          .sort((a, b) => {
+            const sA = (finiteNum(a.start) ?? 0) + (finiteNum(a.delay) ?? 0);
+            const sB = (finiteNum(b.start) ?? 0) + (finiteNum(b.delay) ?? 0);
+            return sA - sB;
+          });
+        let elFirst = true;
+        for (const m of validMotions) {
+          const start = finiteNum(m.start);
+          const duration = finiteNum(m.duration);
+          if (start == null || duration == null || duration <= 0) continue;
+          const delay = finiteNum(m.delay) ?? 0;
+          const effectiveStart = Math.max(0, start + delay);
+          const ease = typeof m.ease === "string" && m.ease.trim() ? m.ease : "none";
+          const from = (m.from && typeof m.from === "object" ? m.from : {}) as Record<
+            string,
+            unknown
+          >;
+          const to = (m.to && typeof m.to === "object" ? m.to : {}) as Record<string, unknown>;
+          const customEase = m.customEase as { id?: string; data?: string } | null | undefined;
+          let resolvedEase = ease;
+          if (customEase?.id && customEase?.data && win.CustomEase?.create) {
+            try {
+              gsap.registerPlugin?.(win.CustomEase);
+              win.CustomEase.create(customEase.id, customEase.data);
+              resolvedEase = customEase.id;
+            } catch {
+              /* use default ease */
+            }
           }
+          const keyframesRaw = Array.isArray(m.keyframes) ? m.keyframes : null;
+          if (keyframesRaw && keyframesRaw.length >= 2) {
+            for (let k = 0; k < keyframesRaw.length - 1; k++) {
+              const kfA = keyframesRaw[k] as Record<string, unknown> | undefined;
+              const kfB = keyframesRaw[k + 1] as Record<string, unknown> | undefined;
+              if (!kfA || !kfB) continue;
+              const pA = finiteNum(kfA.progress) ?? 0;
+              const pB = finiteNum(kfB.progress) ?? 1;
+              const vA = (kfA.values && typeof kfA.values === "object" ? kfA.values : {}) as Record<
+                string,
+                unknown
+              >;
+              const vB = (kfB.values && typeof kfB.values === "object" ? kfB.values : {}) as Record<
+                string,
+                unknown
+              >;
+              const segStart = effectiveStart + pA * duration;
+              const segDur = Math.max(0.001, (pB - pA) * duration);
+              const segEase =
+                typeof kfB.ease === "string" && kfB.ease.trim() ? kfB.ease.trim() : resolvedEase;
+              fromTo.call(
+                tl,
+                el,
+                { ...vA },
+                {
+                  ...vB,
+                  duration: segDur,
+                  ease: segEase,
+                  overwrite: "auto",
+                  immediateRender: false,
+                },
+                segStart,
+              );
+            }
+            elFirst = false;
+            applied += 1;
+            continue;
+          }
+          if (m.category === "entrance" && effectiveStart > 0 && elFirst) {
+            fromTo.call(
+              tl,
+              el,
+              { ...from },
+              {
+                ...from,
+                duration: effectiveStart,
+                ease: "none",
+                overwrite: "auto",
+                immediateRender: false,
+              },
+              0,
+            );
+          }
+          fromTo.call(
+            tl,
+            el,
+            { ...from },
+            { ...to, duration, ease: resolvedEase, overwrite: "auto", immediateRender: false },
+            effectiveStart,
+          );
+          elFirst = false;
+          applied += 1;
         }
-        fromTo.call(
-          tl,
-          el,
-          { ...from },
-          { ...to, duration, ease: resolvedEase, overwrite: "auto", immediateRender: false },
-          start,
-        );
-        applied += 1;
       } catch {
         /* malformed JSON — skip */
       }

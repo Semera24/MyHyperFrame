@@ -209,22 +209,28 @@ export function createViteAdapter(
   };
 
   const getProducerModule = async () => {
-    if (!_producerModuleLoader) {
-      _producerModuleLoader = createRetryingModuleLoader(async () => {
-        const { built } = ensureProducerDist({
-          studioDir: __dirname,
-          env: process.env,
+    try {
+      return (await server.ssrLoadModule(
+        resolve(__dirname, "../producer/src/index.ts"),
+      )) as Awaited<ReturnType<NonNullable<typeof _producerModuleLoader>>>;
+    } catch {
+      if (!_producerModuleLoader) {
+        _producerModuleLoader = createRetryingModuleLoader(async () => {
+          const { built } = ensureProducerDist({
+            studioDir: __dirname,
+            env: process.env,
+          });
+          if (built) {
+            console.warn(
+              "[Studio] @hyperframes/producer dist missing; building producer package for local renders...",
+            );
+          }
+          const producerPkg = "@hyperframes/producer";
+          return await import(/* @vite-ignore */ producerPkg);
         });
-        if (built) {
-          console.warn(
-            "[Studio] @hyperframes/producer dist missing; building producer package for local renders...",
-          );
-        }
-        const producerPkg = "@hyperframes/producer";
-        return await import(/* @vite-ignore */ producerPkg);
-      });
+      }
+      return _producerModuleLoader();
     }
-    return _producerModuleLoader();
   };
 
   return {
@@ -389,7 +395,9 @@ export function createViteAdapter(
             if (systemChrome) process.env.PRODUCER_HEADLESS_SHELL_PATH = systemChrome;
           }
           const { createRenderJob, executeRenderJob } = await getProducerModule();
-          const renderBodyScripts = createStudioDevRenderBodyScripts(opts.project.dir);
+          const renderBodyScripts = createStudioDevRenderBodyScripts(opts.project.dir, {
+            activeCompositionPath: opts.composition ?? null,
+          });
           const job = createRenderJob({
             fps: opts.fps,
             quality: opts.quality as "draft" | "standard" | "high",
@@ -433,7 +441,11 @@ export function createViteAdapter(
                 mkdirSync(epRendersDir, { recursive: true });
                 const targetDraft = join(epRendersDir, `${opts.project.id}_Draft.mp4`);
                 copyFileSync(opts.outputPath, targetDraft);
-                episodeDraftPath = targetDraft;
+                const epPreviewsDir = join(epRoot, "Previews");
+                mkdirSync(epPreviewsDir, { recursive: true });
+                const previewFile = join(epPreviewsDir, `${opts.project.id}_Preview_v1.mp4`);
+                copyFileSync(opts.outputPath, previewFile);
+                episodeDraftPath = previewFile;
               }
             } catch (copyErr) {
               console.warn("[Studio] Auto-copy to Episode Renders/ failed:", copyErr);
@@ -456,9 +468,10 @@ export function createViteAdapter(
           }
           state.status = "failed";
           state.error = err instanceof Error ? err.message : String(err);
+          console.error("[Studio] Render job failed:", err);
           try {
             const metaPath = opts.outputPath.replace(/\.(mp4|webm|mov|gif)$/, ".meta.json");
-            writeFileSync(metaPath, JSON.stringify({ status: "failed" }));
+            writeFileSync(metaPath, JSON.stringify({ status: "failed", error: state.error }));
           } catch {
             /* ignore */
           }

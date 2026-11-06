@@ -4,6 +4,7 @@ import { useCaptionStore } from "../../captions/store";
 import { ConnectedDomEditOverlay } from "../editor/ConnectedDomEditOverlay";
 import { TopologyLens } from "../editor/TopologyLens";
 import { MotionPathOverlay } from "../editor/MotionPathOverlay";
+import { StudioMotionCanvasOverlay } from "../editor/StudioMotionCanvasOverlay";
 import { SnapToolbar } from "../editor/SnapToolbar";
 import { GridOverlay } from "../editor/GridOverlay";
 import { usePreviewOverlayContext } from "../editor/PreviewOverlayProvider";
@@ -239,12 +240,15 @@ export function PreviewOverlays({
       />
       <SnapToolbar />
       {!readOnly && (
-        <MotionPathOverlay
-          iframeRef={previewIframeRef}
-          selection={shouldShowMotionPath ? domEditSelection : null}
-          compositionSize={compositionDimensions}
-          isPlaying={isPlaying}
-        />
+        <>
+          <StudioMotionCanvasOverlay />
+          <MotionPathOverlay
+            iframeRef={previewIframeRef}
+            selection={shouldShowMotionPath ? domEditSelection : null}
+            compositionSize={compositionDimensions}
+            isPlaying={isPlaying}
+          />
+        </>
       )}
       {gestureOverlay}
       {captionModelPresent && captionDismissed && (

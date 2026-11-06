@@ -11,6 +11,8 @@ import { VariablesPanel } from "./panels/VariablesPanel";
 import { MotionBlurPanel } from "./panels/MotionBlurPanel";
 import { AgentAssistantPanel } from "./panels/AgentAssistantPanel";
 import { EpisodeHandoffPanel } from "./panels/EpisodeHandoffPanel";
+import { MotionInspector } from "./panels/MotionInspector";
+import { useStudioMotionStore } from "./editor/useStudioMotionStore";
 import { Dock } from "./dock/Dock";
 import { useDockLayoutStore } from "./dock/dockLayoutStore";
 import type { RenderJob } from "./renders/useRenderQueue";
@@ -268,8 +270,12 @@ export const StudioRightPanels = memo(function StudioRightPanels({
     </DesignPanelPromoteProvider>
   );
 
+  const { selectedMotionId, setSelectedMotionId } = useStudioMotionStore();
+
   let designBody = propertyPanel;
-  if (captionEditMode) {
+  if (selectedMotionId) {
+    designBody = <MotionInspector onClose={() => setSelectedMotionId(null)} />;
+  } else if (captionEditMode) {
     designBody = <CaptionPropertyPanel iframeRef={previewIframeRef} />;
   } else if (activeBlockParams) {
     designBody = (
@@ -294,6 +300,9 @@ export const StudioRightPanels = memo(function StudioRightPanels({
 
   return (
     <>
+      <Dock.Panel id="design" title={selectedMotionId ? "Motion Inspector" : "Inspector"}>
+        {designBody}
+      </Dock.Panel>
       <Dock.Panel id="layers">
         <LayersPanel />
       </Dock.Panel>
@@ -309,7 +318,6 @@ export const StudioRightPanels = memo(function StudioRightPanels({
       <Dock.Panel id="handoff" title="📋 Handoff">
         <EpisodeHandoffPanel projectId={projectId} />
       </Dock.Panel>
-      <Dock.Panel id="design">{designBody}</Dock.Panel>
       <Dock.Panel
         id="renders"
         title={renderJobs.length > 0 ? `Renders (${renderJobs.length})` : undefined}

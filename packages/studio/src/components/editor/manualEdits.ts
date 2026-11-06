@@ -52,6 +52,7 @@ import {
   STUDIO_MANUAL_EDITS_WRAPPED_PROP,
   STUDIO_MANUAL_EDITS_PLAYBACK_FRAME_PROP,
 } from "./manualEditsTypes";
+import { STUDIO_MOTION_TIMELINE_ID } from "./studioMotionTypes";
 import { finiteNumber } from "./manualEditsParsing";
 
 /* ── Seek/play reapply wrappers ───────────────────────────────────── */
@@ -275,7 +276,8 @@ export function installStudioManualEditSeekReapply(win: Window, apply: () => voi
   let wrappedNamedTimelineSeek = false;
   let wrappedNamedTimelinePlay = false;
   let wrappedNamedTimelinePause = false;
-  for (const timeline of Object.values(studioWin.__timelines ?? {})) {
+  for (const [id, timeline] of Object.entries(studioWin.__timelines ?? {})) {
+    if (id === STUDIO_MOTION_TIMELINE_ID) continue;
     wrappedNamedTimelineSeek =
       wrapSeekReapplyFunction(studioWin, timeline, "seek") || wrappedNamedTimelineSeek;
     wrapSeekReapplyFunction(studioWin, timeline, "totalTime");
@@ -294,7 +296,12 @@ export function installStudioManualEditSeekReapply(win: Window, apply: () => voi
     studioWin.__timelines = new Proxy(original, {
       set(target, prop, value) {
         target[prop as string] = value;
-        if (typeof value === "object" && value !== null) {
+        if (
+          prop !== STUDIO_MOTION_TIMELINE_ID &&
+          prop !== "__proxied" &&
+          typeof value === "object" &&
+          value !== null
+        ) {
           const tl = value as Record<string, unknown>;
           wrapSeekReapplyFunction(studioWin, tl, "seek");
           wrapSeekReapplyFunction(studioWin, tl, "totalTime");

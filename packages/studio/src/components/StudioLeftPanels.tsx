@@ -5,6 +5,8 @@ import { MediaPreview } from "./MediaPreview";
 import { AssetsTab } from "./sidebar/AssetsTab";
 import { BlocksTab, type BlockPreviewInfo } from "./sidebar/BlocksTab";
 import { CompositionsPanel } from "./sidebar/CompositionsPanel";
+import { TransitionsPanel } from "./panels/TransitionsPanel";
+import { MotionLibraryPanel } from "./panels/MotionLibraryPanel";
 import { SidebarLintButton } from "./sidebar/SidebarLintButton";
 import { Dock } from "./dock/Dock";
 import { useDockLayoutStore } from "./dock/dockLayoutStore";
@@ -27,6 +29,10 @@ interface StudioLeftPanelsProps {
   activeCompPath?: string | null;
   reloadPreview?: () => void;
   refreshFileTree?: () => void;
+  recordEdit?: (entry: {
+    label: string;
+    files: Record<string, { before: string; after: string }>;
+  }) => Promise<void>;
 }
 
 function PanelColumn({ footer, children }: { footer: ReactNode; children: ReactNode }) {
@@ -53,6 +59,7 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
   activeCompPath,
   reloadPreview,
   refreshFileTree,
+  recordEdit,
 }: StudioLeftPanelsProps) {
   const { projectId, renderQueue, waitForPendingDomEditSaves } = useStudioShellContext();
   const {
@@ -114,6 +121,12 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
             lintFindingsByFile={lintFindingsByFile}
           />
         </PanelColumn>
+      </Dock.Panel>
+      <Dock.Panel id="transitions" title="🔀 Transitions">
+        <TransitionsPanel recordEdit={recordEdit} />
+      </Dock.Panel>
+      <Dock.Panel id="motion" title="✨ Motion">
+        <MotionLibraryPanel recordEdit={recordEdit} />
       </Dock.Panel>
       <Dock.Panel id="assets">
         <PanelColumn footer={lintButton}>

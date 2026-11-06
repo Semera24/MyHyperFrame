@@ -8,12 +8,19 @@ const MIN_TIMELINE_H = 100;
 const MIN_SIDE_W = 200;
 const MIN_SIDE_W_FLOOR = 120;
 const DEFAULT_TIMELINE_H = 360;
-const DEFAULT_LEFT = ["compositions", "assets", "code", "catalog"] as const;
+const DEFAULT_LEFT = [
+  "compositions",
+  "transitions",
+  "motion",
+  "assets",
+  "code",
+  "catalog",
+] as const;
 const DEFAULT_RIGHT = [
+  "design",
   "layers",
   "assistant",
   "handoff",
-  "design",
   "renders",
   "variables",
   "motionBlur",
@@ -22,8 +29,8 @@ const DEFAULT_RIGHT = [
 /** Preferred side widths; when they overflow the preview's floor the right yields first, then the left. */
 export function defaultSideWidths(viewportWidth: number) {
   const floor = sideMinimumWidth(viewportWidth);
-  const left = Math.max(floor, Math.min(384, Math.round(viewportWidth * 0.257)));
-  const right = Math.max(Math.min(280, floor), Math.min(424, Math.round(viewportWidth * 0.284)));
+  const left = Math.max(floor, Math.min(460, Math.round(viewportWidth * 0.28)));
+  const right = Math.max(Math.min(280, floor), Math.min(380, Math.round(viewportWidth * 0.24)));
   const excess = left + right - Math.max(0, viewportWidth - MIN_PREVIEW_W);
   if (excess <= 0) return { left, right };
   const shrunkRight = Math.max(floor, right - excess);

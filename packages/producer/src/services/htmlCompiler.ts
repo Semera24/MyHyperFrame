@@ -103,6 +103,10 @@ import {
 import { prepareAnimatedGifInputs } from "./animatedGifPrep.js";
 import { prepareHeifImageInputs } from "./heifImagePrep.js";
 import { createStudioPositionSeekReapplyScript } from "@hyperframes/studio-server/manual-edits-render-script";
+import {
+  createStudioMotionRenderBodyScript,
+  STUDIO_MOTION_PATH,
+} from "@hyperframes/studio-server/studio-motion-render-script";
 import { getPositionEditsRenderScript } from "@hyperframes/core/runtime/position-edits-render";
 import { defaultLogger, type ProducerLogger } from "../logger.js";
 import { assertAssetMediaTypeProfile } from "./assetMediaType.js";
@@ -2166,8 +2170,29 @@ export async function compileForRender(
         `<script>${createStudioPositionSeekReapplyScript()}\n//# sourceURL=hyperframes://position-seek-reapply</script>`,
       ) ?? assembledHtml)
     : assembledHtml;
+
+  let htmlWithStudioMotionScript = htmlWithPositionScript;
+  const studioMotionFilePath = join(projectDir, STUDIO_MOTION_PATH);
+  if (existsSync(studioMotionFilePath)) {
+    try {
+      const motionManifestRaw = readFileSync(studioMotionFilePath, "utf-8");
+      const motionRenderScript = createStudioMotionRenderBodyScript(motionManifestRaw);
+      if (motionRenderScript) {
+        const safeMotionScript = motionRenderScript.replace(/<\/script/gi, "<\\/script");
+        htmlWithStudioMotionScript =
+          insertBeforeCloseTag(
+            htmlWithPositionScript,
+            "body",
+            `<script>${safeMotionScript}\n//# sourceURL=hyperframes://studio-motion-render</script>`,
+          ) ?? htmlWithPositionScript;
+      }
+    } catch {
+      /* ignore unreadable sidecar */
+    }
+  }
+
   const htmlWithDeferredScripts = prepareCompositionScripts(
-    injectSdkPositionEditsRenderScript(htmlWithPositionScript),
+    injectSdkPositionEditsRenderScript(htmlWithStudioMotionScript),
   );
 
   // Download remote <video> and <audio> sources to compiledDir and rewrite the

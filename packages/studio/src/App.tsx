@@ -487,6 +487,7 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
       activeCompPath,
       reloadPreview,
       refreshFileTree: fileManager.refreshFileTree,
+      recordEdit: editHistory.recordEdit,
     },
     {
       activeBlockParams,

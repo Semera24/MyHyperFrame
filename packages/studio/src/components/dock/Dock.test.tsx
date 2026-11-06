@@ -92,8 +92,34 @@ function persistedGroupOf(id: string): string | undefined {
   return groups.find((views) => views.includes(`"${id}"`));
 }
 
+const storageMap = new Map<string, string>();
+const memoryStorage = {
+  getItem: (k: string) => storageMap.get(k) ?? null,
+  setItem: (k: string, v: string) => storageMap.set(k, String(v)),
+  removeItem: (k: string) => storageMap.delete(k),
+  clear: () => storageMap.clear(),
+  get length() {
+    return storageMap.size;
+  },
+  key: (i: number) => Array.from(storageMap.keys())[i] ?? null,
+};
+try {
+  Object.defineProperty(globalThis, "localStorage", {
+    value: memoryStorage,
+    configurable: true,
+    writable: true,
+  });
+} catch {
+  // ignore if already defined
+}
+
 beforeEach(() => {
-  localStorage.clear();
+  storageMap.clear();
+  try {
+    localStorage.clear();
+  } catch {
+    // ignore
+  }
   vi.useFakeTimers();
 });
 
@@ -173,7 +199,14 @@ describe("Dock on React 19", () => {
   it("reopens a side panel next to the preview when its whole column was closed", () => {
     mount("p1");
     const { closePanel, togglePanel } = useDockLayoutStore.getState();
-    for (const id of ["compositions", "assets", "code", "catalog"] as const)
+    for (const id of [
+      "compositions",
+      "transitions",
+      "motion",
+      "assets",
+      "code",
+      "catalog",
+    ] as const)
       act(() => closePanel(id));
     act(() => togglePanel("compositions"));
     expect(useDockLayoutStore.getState().openPanels.has("compositions")).toBe(true);
@@ -183,7 +216,14 @@ describe("Dock on React 19", () => {
   it("reopens a panel whose usual neighbour is only closed exactly as before: no new position", () => {
     mount("p1");
     const { closePanel, togglePanel } = useDockLayoutStore.getState();
-    for (const id of ["compositions", "assets", "code", "catalog"] as const)
+    for (const id of [
+      "compositions",
+      "transitions",
+      "motion",
+      "assets",
+      "code",
+      "catalog",
+    ] as const)
       act(() => closePanel(id));
     addRegisteredPanel.mockClear();
     act(() => togglePanel("assets"));

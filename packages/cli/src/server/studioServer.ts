@@ -43,6 +43,8 @@ import type { ProjectLintResult } from "@hyperframes/lint";
 import { resolveRenderBrowser } from "../browser/preflight.js";
 import {
   createStudioManualEditsRenderBodyScript,
+  createStudioMotionRenderBodyScript,
+  STUDIO_MOTION_PATH,
   createStudioApi,
   createProjectSignature,
   createBackgroundRemovalJob,
@@ -179,6 +181,16 @@ function resolveRuntimePath(): string {
 const GSAP_LOCAL_ROOT = "/api/vendor/npm";
 function readStudioManualEditManifestContent(projectDir: string): string {
   const manifestPath = join(projectDir, STUDIO_MANUAL_EDITS_PATH);
+  if (!existsSync(manifestPath)) return "";
+  try {
+    return readFileSync(manifestPath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function readStudioMotionManifestContent(projectDir: string): string {
+  const manifestPath = join(projectDir, STUDIO_MOTION_PATH);
   if (!existsSync(manifestPath)) return "";
   try {
     return readFileSync(manifestPath, "utf-8");
@@ -653,7 +665,16 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
           }
 
           const manifestContent = readStudioManualEditManifestContent(opts.project.dir);
-          const manualEditsRenderScript = createStudioManualEditsRenderBodyScript(manifestContent);
+          const manualEditsRenderScript = createStudioManualEditsRenderBodyScript(manifestContent, {
+            activeCompositionPath: opts.composition ?? null,
+          });
+          const motionManifestContent = readStudioMotionManifestContent(opts.project.dir);
+          const motionRenderScript = createStudioMotionRenderBodyScript(motionManifestContent, {
+            activeCompositionPath: opts.composition ?? null,
+          });
+          const renderBodyScripts = [manualEditsRenderScript, motionRenderScript].filter(
+            (script): script is string => typeof script === "string",
+          );
           const job = createRenderJob({
             // opts.fps is already an Fps rational — see vite-config-studio
             // adapter for the same convention.
@@ -662,7 +683,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
             format: opts.format,
             ...(opts.gifLoop !== undefined ? { gifLoop: opts.gifLoop } : {}),
             outputResolution: opts.outputResolution,
-            ...(manualEditsRenderScript ? { renderBodyScripts: [manualEditsRenderScript] } : {}),
+            ...(renderBodyScripts.length > 0 ? { renderBodyScripts } : {}),
             ...(opts.composition ? { entryFile: opts.composition } : {}),
             ...(opts.variables ? { variables: opts.variables } : {}),
             ...encoderJobOptions(opts),

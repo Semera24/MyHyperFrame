@@ -34,6 +34,7 @@ import { getTimelineElementIdentity } from "../lib/timelineElementHelpers";
 import { timelineClipFocusId } from "./timelineNavigationIdentity";
 import { useTimelineKeyboardActor } from "./useTimelineKeyboardActor";
 import { TimelineTransitionOverlays } from "./TimelineTransitionOverlays";
+import { TimelineMotionBlocksOverlay } from "./TimelineMotionBlocksOverlay";
 import { deriveTimelineTransitionSeamsByTrack } from "./timelineTransitionSeams";
 import { reorderTimelineTrackRows } from "../../utils/studioLayerActions";
 import { useOptionalNLEContext } from "../../components/nle/NLEContext";
@@ -614,6 +615,16 @@ export function TimelineLanes({
                   pixelsPerSecond={pps}
                   rowHeight={rowHeight}
                   clipBarHeight={clipBarHeight}
+                />
+                <TimelineMotionBlocksOverlay
+                  trackNum={trackNum}
+                  trackElements={els}
+                  allTracks={tracks}
+                  pps={pps}
+                  activeCompPath={activeCompPath}
+                  currentTime={currentTime}
+                  onSelectElement={onSelectElement}
+                  onSeek={onSeek}
                 />
                 {/* The automation lanes belong to the ROW, so they are mounted
                     here rather than under the active clip's property lanes.
