@@ -13,6 +13,7 @@ import { OpenInDesktopButton } from "./OpenInDesktopButton";
 import { HyperframesLogo } from "./ui/HyperframesLogo";
 import { ShowThemeToggle, ThemeToggle } from "./ThemeToggle";
 import { TemplatesModal } from "./templates/TemplatesModal";
+import { CreateEpisodeModal } from "./projects/CreateEpisodeModal";
 
 interface StudioHeaderProps {
   captureFrameHref: string;
@@ -76,6 +77,7 @@ export const StudioHeader = memo(function StudioHeader({
   const [exportingToEpisode, setExportingToEpisode] = useState(false);
   const [exportedDraftStatus, setExportedDraftStatus] = useState<string | null>(null);
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
+  const [createEpisodeModalOpen, setCreateEpisodeModalOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   const isRendering = renderQueue.isRendering;
   const ffmpegMissing = renderQueue.ffmpegMissing;
@@ -302,6 +304,19 @@ export const StudioHeader = memo(function StudioHeader({
                     })}
                 </>
               )}
+              <div className="pt-1.5 border-t border-border mt-1">
+                <button
+                  type="button"
+                  data-testid="create-new-episode-button"
+                  onClick={() => {
+                    setEpisodesOpen(false);
+                    setCreateEpisodeModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold transition-all cursor-pointer"
+                >
+                  <span>＋ New Episode from Studio Template</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -542,6 +557,12 @@ export const StudioHeader = memo(function StudioHeader({
         onSceneCreated={() => {
           shell.reloadPreview();
         }}
+      />
+
+      {/* New Episode Scaffold Modal */}
+      <CreateEpisodeModal
+        isOpen={createEpisodeModalOpen}
+        onClose={() => setCreateEpisodeModalOpen(false)}
       />
     </div>
   );

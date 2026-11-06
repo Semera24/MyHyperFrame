@@ -333,4 +333,165 @@ export function registerProjectRoutes(api: Hono, adapter: StudioApiAdapter): voi
     await writeCanvasCommentsFile(project.dir, pins);
     return c.json({ ok: true, pins });
   });
+
+  // POST /api/projects/create-episode — Scaffolds a complete authoritative episode
+  api.post("/projects/create-episode", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      channel?: string;
+      episodeId?: string;
+      title?: string;
+      centralQuestion?: string;
+    } | null;
+
+    if (!body || !body.episodeId || !body.episodeId.trim()) {
+      return c.json({ ok: false, error: "episodeId is required (e.g. EP06_The_Crisis)" }, 400);
+    }
+
+    const channel = body.channel || "Turning_Point_Stories";
+    const episodeId = body.episodeId.trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+    const title = body.title?.trim() || episodeId.replace(/_/g, " ");
+    const question = body.centralQuestion?.trim() || "Which moment turned crisis into a turning point?";
+
+    const baseDir = "/Users/yonassayfu/Projects/ProductionStudio";
+    const channelEpisodesDir = join(baseDir, "channels", channel, "episodes");
+    const epDir = join(channelEpisodesDir, episodeId);
+
+    if (existsSync(epDir)) {
+      return c.json({ ok: false, error: `Episode folder '${episodeId}' already exists!` }, 409);
+    }
+
+    const subdirs = [
+      "Audio",
+      "Backups",
+      "Brief",
+      "Handoff",
+      "Images",
+      "Previews",
+      "QC",
+      "Reference",
+      "Research",
+      "Sources",
+      "Sources/assets",
+      "Sources/compositions",
+      "Timing",
+    ];
+
+    for (const sub of subdirs) {
+      await mkdir(join(epDir, sub), { recursive: true });
+    }
+
+    // 1. Brief/<EP_ID>_Brief.md
+    const briefContent = `# ${episodeId} Brief — ${title}\n\n## Central Question\n${question}\n\n## Status\nSTAGE A — TOPIC AND BRIEF\n`;
+    await writeFile(join(epDir, "Brief", `${episodeId}_Brief.md`), briefContent, "utf-8");
+
+    // 2. Brief/<EP_ID>_Script.md
+    const scriptContent = `# ${episodeId} Script — ${title}\n\nStatus: Initial Draft\n\n## S01 — The Hook\n\n[Opening narrative voiceover text will be placed here.]\n`;
+    await writeFile(join(epDir, "Brief", `${episodeId}_Script.md`), scriptContent, "utf-8");
+
+    // 3. Timing/<EP_ID>_Timing_Map.json
+    const timingContent = JSON.stringify(
+      {
+        episode_id: episodeId,
+        fps: 30,
+        status: "placeholder_scaffold",
+        target_video_duration_seconds: 24.0,
+        target_frames: 720,
+        scenes: [
+          {
+            id: "S01",
+            title: "The Hook",
+            start_frame: 0,
+            end_frame_exclusive: 720,
+            first_phrase: "In the defining moments of history...",
+            last_phrase: "...everything changed.",
+            cues: [
+              {
+                id: "S01_C01",
+                supplied_seconds: 0.5,
+                frame: 15,
+                visual_intent: "Reveal title card",
+              },
+            ],
+          },
+        ],
+      },
+      null,
+      2,
+    );
+    await writeFile(join(epDir, "Timing", `${episodeId}_Timing_Map.json`), timingContent, "utf-8");
+
+    // 4. Sources/index.html (Desktop-compatible entry point!)
+    const sourcesIndex = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${title} (${episodeId})</title>
+  <style>
+    body, html { margin: 0; padding: 0; overflow: hidden; background: #0B141C; width: 1920px; height: 1080px; }
+    #master-stage { width: 1920px; height: 1080px; position: relative; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+</head>
+<body>
+  <div id="master-stage" data-duration="24.0" data-fps="30">
+    <div data-composition="s01" data-src="compositions/s01.html" data-start="0" data-duration="24.0"></div>
+  </div>
+</body>
+</html>`;
+    await writeFile(join(epDir, "Sources", "index.html"), sourcesIndex, "utf-8");
+
+    // 5. Sources/hyperframes.json
+    const metaJson = JSON.stringify(
+      {
+        id: episodeId,
+        title,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+        compositions: ["compositions/s01.html"],
+      },
+      null,
+      2,
+    );
+    await writeFile(join(epDir, "Sources", "hyperframes.json"), metaJson, "utf-8");
+
+    // 6. Sources/compositions/s01.html
+    const s01Html = `<template>
+  <div data-hf-id="hf-s01-root" id="root" data-composition-id="s01" data-width="1920" data-height="1080">
+    <style>
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #0B141C; font-family: Inter, sans-serif; }
+      #s01-vignette { position: absolute; inset: 0; background: linear-gradient(to right, rgba(11,20,28,0.92) 0%, rgba(11,20,28,0.6) 100%); z-index: 2; }
+      #s01-headline-card { position: absolute; left: 90px; top: 120px; width: 840px; z-index: 10; opacity: 0; }
+      #s01-kicker { font-size: 20px; font-weight: 700; letter-spacing: 0.16em; color: #C49A44; text-transform: uppercase; margin-bottom: 12px; }
+      #s01-headline-text { font-size: 52px; font-weight: 900; line-height: 1.15; color: #FFFFFF; }
+      #s01-central-q { margin-top: 24px; font-size: 22px; color: #C8D6DF; line-height: 1.4; border-left: 4px solid #357F83; padding-left: 16px; }
+    </style>
+    <div id="s01-vignette"></div>
+    <div id="s01-headline-card">
+      <div id="s01-kicker">${episodeId.replace(/_/g, " ")}</div>
+      <div id="s01-headline-text">${title}</div>
+      <div id="s01-central-q">${question}</div>
+    </div>
+    <script>
+      (() => {
+        const t = gsap.timeline({ paused: true });
+        t.fromTo('#s01-headline-card', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1.0, ease: 'power2.out' }, 0.5);
+        t.set({}, {}, 24.0);
+        window.__timelines = window.__timelines || {};
+        window.__timelines.s01 = t;
+      })();
+    </script>
+  </div>
+</template>`;
+    await writeFile(join(epDir, "Sources", "compositions", "s01.html"), s01Html, "utf-8");
+
+    return c.json({
+      ok: true,
+      episodeId,
+      title,
+      channel,
+      epDir,
+      sourcesDir: join(epDir, "Sources"),
+    });
+  });
 }

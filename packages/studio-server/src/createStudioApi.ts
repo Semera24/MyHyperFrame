@@ -19,6 +19,7 @@ import { registerGlobalAssetRoutes } from "./routes/globalAssets.js";
 import { registerHistoryRoutes } from "./routes/history.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerTemplateRoutes } from "./routes/templates.js";
+import { registerHandoffRoutes } from "./routes/handoff.js";
 import { replaceWithProjectDirMissing } from "./helpers/projectDirMissing.js";
 import { folderGone, isProjectRootMissing } from "./helpers/safePath.js";
 import { previewErrorPage } from "./helpers/previewErrorPage.js";
@@ -99,6 +100,7 @@ export function createStudioApi(adapter: StudioApiAdapter): Hono {
   registerHistoryRoutes(api, adapter);
   registerAgentRoutes(api, adapter);
   registerTemplateRoutes(api, adapter);
+  registerHandoffRoutes(api, adapter);
 
   return api;
 }

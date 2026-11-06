@@ -10,6 +10,7 @@ import { SlideshowPanel } from "./panels/SlideshowPanel";
 import { VariablesPanel } from "./panels/VariablesPanel";
 import { MotionBlurPanel } from "./panels/MotionBlurPanel";
 import { AgentAssistantPanel } from "./panels/AgentAssistantPanel";
+import { EpisodeHandoffPanel } from "./panels/EpisodeHandoffPanel";
 import { Dock } from "./dock/Dock";
 import { useDockLayoutStore } from "./dock/dockLayoutStore";
 import type { RenderJob } from "./renders/useRenderQueue";
@@ -304,6 +305,9 @@ export const StudioRightPanels = memo(function StudioRightPanels({
           reloadPreview={reloadPreview}
           refreshFileTree={refreshFileTree}
         />
+      </Dock.Panel>
+      <Dock.Panel id="handoff" title="📋 Handoff">
+        <EpisodeHandoffPanel projectId={projectId} />
       </Dock.Panel>
       <Dock.Panel id="design">{designBody}</Dock.Panel>
       <Dock.Panel

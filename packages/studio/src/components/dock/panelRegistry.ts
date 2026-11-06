@@ -10,6 +10,7 @@ export const PANEL_IDS = [
   "design",
   "layers",
   "assistant",
+  "handoff",
   "renders",
   "variables",
   "slideshow",
@@ -57,6 +58,11 @@ export const PANEL_DEFINITIONS = {
   layers: { title: "Layers", zone: "right", reopen: { near: "design", direction: "within" } },
   assistant: {
     title: "🤖 Assistant",
+    zone: "right",
+    reopen: { near: "design", direction: "within" },
+  },
+  handoff: {
+    title: "📋 Handoff",
     zone: "right",
     reopen: { near: "design", direction: "within" },
   },

@@ -12,6 +12,7 @@ const DEFAULT_LEFT = ["compositions", "assets", "code", "catalog"] as const;
 const DEFAULT_RIGHT = [
   "layers",
   "assistant",
+  "handoff",
   "design",
   "renders",
   "variables",
