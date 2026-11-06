@@ -17,6 +17,26 @@ export interface AssetPreflightItem {
   warning?: string;
 }
 
+export interface RevisionEntry {
+  status: "open" | "implemented" | "checked" | "owner-approved";
+  title: string;
+  rawSummary?: string;
+  timeSeconds?: number;
+  frame?: number;
+  scene?: string;
+  target?: string;
+  note?: string;
+}
+
+export interface AudioFrameEndpoint {
+  fps: number;
+  rawDurationSeconds: number;
+  ceilingFrames: number;
+  frameAlignedSeconds: number;
+  deltaFrames: number;
+  deltaSeconds: number;
+}
+
 export interface EpisodeHandoffData {
   episodeId: string;
   channel: string;
@@ -41,6 +61,7 @@ export interface EpisodeHandoffData {
     timelineDurationSeconds?: number;
     isDurationInSync?: boolean;
     durationDiffSeconds?: number;
+    frameEndpoint?: AudioFrameEndpoint;
   };
   timing: {
     fileName?: string;
@@ -62,11 +83,7 @@ export interface EpisodeHandoffData {
   };
   revisions: {
     revisionNotesFile?: string;
-    recentRevisions: Array<{
-      date?: string;
-      title?: string;
-      rawSummary?: string;
-    }>;
+    recentRevisions: RevisionEntry[];
   };
   delivery: {
     hasDraftRender: boolean;
@@ -289,6 +306,26 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
       }
     }
 
+    // Audio Frame Endpoint calculation: whole frame ceiling at project fps
+    if (data.audio.durationSeconds) {
+      const fps = data.timing.fps || 30;
+      const rawSecs = data.audio.durationSeconds;
+      const ceilingFrames = Math.ceil(rawSecs * fps);
+      const frameAlignedSecs = ceilingFrames / fps;
+      data.audio.frameEndpoint = {
+        fps,
+        rawDurationSeconds: Number.parseFloat(rawSecs.toFixed(3)),
+        ceilingFrames,
+        frameAlignedSeconds: Number.parseFloat(frameAlignedSecs.toFixed(3)),
+        deltaFrames: data.audio.timelineDurationSeconds
+          ? Math.round((frameAlignedSecs - data.audio.timelineDurationSeconds) * fps)
+          : 0,
+        deltaSeconds: data.audio.timelineDurationSeconds
+          ? Number.parseFloat((frameAlignedSecs - data.audio.timelineDurationSeconds).toFixed(3))
+          : 0,
+      };
+    }
+
     // 4. Asset Manifest & Preflight Check in Images/
     const imagesDir = join(epRoot, "Images");
     if (existsSync(imagesDir)) {
@@ -367,7 +404,7 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
       }
     }
 
-    // 5. Revision Notes in QC/ or Brief/
+    // 5. Revision Notes in QC/ or Brief/ with explicit status parsing
     const qcDir = join(epRoot, "QC");
     const revFile =
       (existsSync(qcDir) && readdirSync(qcDir).find((f) => f.endsWith("_Revision_Notes.md"))) ||
@@ -378,25 +415,82 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
       data.revisions.revisionNotesFile = revFile;
       try {
         const revContent = readFileSync(p, "utf-8");
-        const sections = revContent.split(/\n(?=##\s+)/).slice(1, 6);
-        data.revisions.recentRevisions = sections.map((sec) => {
+        const parsedRevisions: RevisionEntry[] = [];
+
+        // Parse markdown table rows: | Status | Time | Frame | Scene | Target | Note |
+        const tableRowRegex = /^\|\s*([^|]+)\|\s*([0-9.]+s)?\s*\|\s*([0-9]+f)?\s*\|\s*`?([^`|]+)`?\s*\|\s*`?([^`|]+)`?\s*\|\s*([^|]+)\|/gm;
+        let trm: RegExpExecArray | null;
+        while ((trm = tableRowRegex.exec(revContent)) !== null) {
+          const rawStatus = trm[1]!.trim().toLowerCase();
+          if (rawStatus === "status" || rawStatus.includes("---")) continue; // skip header
+
+          let st: RevisionEntry["status"] = "open";
+          if (rawStatus.includes("approv")) st = "owner-approved";
+          else if (rawStatus.includes("check")) st = "checked";
+          else if (rawStatus.includes("implement")) st = "implemented";
+
+          const timeSec = trm[2] ? Number.parseFloat(trm[2].replace("s", "")) : undefined;
+          const frameNum = trm[3] ? Number.parseInt(trm[3].replace("f", ""), 10) : undefined;
+          const scene = trm[4]?.trim();
+          const target = trm[5]?.trim();
+          const note = trm[6]?.trim();
+
+          parsedRevisions.push({
+            status: st,
+            title: `${st.toUpperCase()}: ${note?.slice(0, 50) || "Note"}`,
+            timeSeconds: timeSec,
+            frame: frameNum,
+            scene,
+            target,
+            note,
+            rawSummary: note,
+          });
+        }
+
+        // Also parse section headers (e.g. ## YYYY-MM-DD — Owner Approval: ...)
+        const sections = revContent.split(/\n(?=##\s+)/).slice(1);
+        for (const sec of sections) {
           const firstLine = sec.split("\n")[0]!.replace(/^##\s+/, "").trim();
-          return {
+          if (firstLine.includes("Studio Pinned Review Notes")) continue;
+
+          let st: RevisionEntry["status"] = "open";
+          const lower = firstLine.toLowerCase();
+          if (lower.includes("approval") || lower.includes("approved")) st = "owner-approved";
+          else if (lower.includes("check") || lower.includes("verif")) st = "checked";
+          else if (lower.includes("implement") || lower.includes("patch")) st = "implemented";
+
+          parsedRevisions.push({
+            status: st,
             title: firstLine,
-            rawSummary: sec.slice(0, 400).trim(),
-          };
-        });
+            rawSummary: sec.slice(0, 300).trim(),
+          });
+        }
+
+        data.revisions.recentRevisions = parsedRevisions.slice(0, 10);
       } catch {
         /* ignore */
       }
     }
 
-    // 6. Delivery, Publishing Package & Renders Check
-    const draftPath = join(epRoot, "Renders", `${episodeId}_Draft.mp4`);
-    if (existsSync(draftPath)) {
-      data.delivery.hasDraftRender = true;
-      data.delivery.draftRenderPath = draftPath;
+    // 6. Review Renders (Previews/ primary per brief convention) & Master Delivery Check
+    const previewsDir = join(epRoot, "Previews");
+    const rendersDir = join(epRoot, "Renders");
+
+    if (existsSync(previewsDir)) {
+      const previewFiles = readdirSync(previewsDir).filter((f) => f.endsWith(".mp4"));
+      if (previewFiles.length > 0) {
+        data.delivery.hasDraftRender = true;
+        data.delivery.draftRenderPath = join(previewsDir, previewFiles[0]!);
+      }
     }
+    if (!data.delivery.hasDraftRender && existsSync(rendersDir)) {
+      const files = readdirSync(rendersDir).filter((f) => f.endsWith(".mp4"));
+      if (files.length > 0) {
+        data.delivery.hasDraftRender = true;
+        data.delivery.draftRenderPath = join(rendersDir, files[0]!);
+      }
+    }
+
     const pubPkgPath = join(epRoot, "Brief", `${episodeId}_Publishing_Package.md`);
     if (existsSync(pubPkgPath)) {
       data.delivery.hasPublishingPackage = true;
@@ -416,6 +510,39 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
     }
 
     return c.json({ ok: true, handoff: data });
+  });
+
+  // 1b. GET /api/projects/:id/asset-file/:fileName — Serve raw image asset for visual inspection
+  api.get("/projects/:id/asset-file/:fileName", async (c) => {
+    const projectId = c.req.param("id");
+    const fileName = c.req.param("fileName");
+    let project = await adapter.resolveProject(projectId);
+    if (!project) {
+      const all = await adapter.listProjects();
+      project = all.find((p) => p.id === projectId) ?? null;
+    }
+    const rawDir = project?.dir || process.cwd();
+    const epRoot = resolveEpisodeRoot(rawDir);
+    const candidatePaths = [
+      join(epRoot, "Images", fileName),
+      join(epRoot, "Sources", "assets", fileName),
+    ];
+    for (const p of candidatePaths) {
+      if (existsSync(p)) {
+        const mime = fileName.endsWith(".png")
+          ? "image/png"
+          : fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")
+            ? "image/jpeg"
+            : fileName.endsWith(".webp")
+              ? "image/webp"
+              : fileName.endsWith(".svg")
+                ? "image/svg+xml"
+                : "application/octet-stream";
+        const bytes = readFileSync(p);
+        return new Response(bytes, { headers: { "Content-Type": mime, "Cache-Control": "no-cache" } });
+      }
+    }
+    return c.text("Asset not found", 404);
   });
 
   // 2. POST /api/projects/:id/handoff/approve — Record an owner approval note in Revision_Notes.md

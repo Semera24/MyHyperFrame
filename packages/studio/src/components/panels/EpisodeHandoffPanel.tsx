@@ -13,6 +13,26 @@ export interface AssetPreflightItem {
   warning?: string;
 }
 
+export interface AudioFrameEndpoint {
+  fps: number;
+  rawDurationSeconds: number;
+  ceilingFrames: number;
+  frameAlignedSeconds: number;
+  deltaFrames: number;
+  deltaSeconds: number;
+}
+
+export interface RevisionEntry {
+  status: "open" | "implemented" | "checked" | "owner-approved";
+  title: string;
+  rawSummary?: string;
+  timeSeconds?: number;
+  frame?: number;
+  scene?: string;
+  target?: string;
+  note?: string;
+}
+
 export interface EpisodeHandoffData {
   episodeId: string;
   channel: string;
@@ -37,6 +57,7 @@ export interface EpisodeHandoffData {
     timelineDurationSeconds?: number;
     isDurationInSync?: boolean;
     durationDiffSeconds?: number;
+    frameEndpoint?: AudioFrameEndpoint;
   };
   timing: {
     fileName?: string;
@@ -58,11 +79,7 @@ export interface EpisodeHandoffData {
   };
   revisions: {
     revisionNotesFile?: string;
-    recentRevisions: Array<{
-      date?: string;
-      title?: string;
-      rawSummary?: string;
-    }>;
+    recentRevisions: RevisionEntry[];
   };
   delivery: {
     hasDraftRender: boolean;
@@ -81,11 +98,10 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
 }) {
   const [data, setData] = useState<EpisodeHandoffData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [approvalNote, setApprovalNote] = useState("");
+  const [checkerTheme, setCheckerTheme] = useState<"dark" | "light" | "black">("dark");
+  const [selectedAsset, setSelectedAsset] = useState<AssetPreflightItem | null>(null);
+  const [showEndpointModal, setShowEndpointModal] = useState(false);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
-  const [showAssetsTable, setShowAssetsTable] = useState(false);
-  const [publishingPackageText, setPublishingPackageText] = useState<string | null>(null);
-  const [copiedNotice, setCopiedNotice] = useState(false);
 
   const fetchHandoff = useCallback(async () => {
     if (!projectId) return;
@@ -96,6 +112,9 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
         const json = (await res.json()) as { ok: boolean; handoff: EpisodeHandoffData };
         if (json.ok) {
           setData(json.handoff);
+          if (json.handoff.assets.items.length > 0 && !selectedAsset) {
+            setSelectedAsset(json.handoff.assets.items[0]);
+          }
         }
       }
     } catch {
@@ -103,119 +122,16 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, selectedAsset]);
 
   useEffect(() => {
     fetchHandoff();
   }, [fetchHandoff]);
 
-  const handleApprove = async (type: "script" | "audio" | "revisions" | "master") => {
-    if (!projectId) return;
-    setActionStatus(`Recording ${type} sign-off...`);
-    try {
-      const res = await studioApiFetch(
-        `/api/projects/${encodeURIComponent(projectId)}/handoff/approve`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type, note: approvalNote || `Approved ${type} stage.` }),
-        },
-      );
-      if (res && res.ok) {
-        setActionStatus(`✓ ${type.toUpperCase()} approved & recorded in QC notes.`);
-        setApprovalNote("");
-        fetchHandoff();
-      } else {
-        setActionStatus(`Failed to record approval.`);
-      }
-    } catch (e) {
-      setActionStatus(`Error: ${String(e)}`);
-    }
+  const handleSimulateSyncDuration = () => {
+    setActionStatus("Simulated: Sync Duration modal opened for review. No production files modified.");
+    setShowEndpointModal(true);
     setTimeout(() => setActionStatus(null), 4000);
-  };
-
-  const handleSyncDuration = async () => {
-    if (!projectId) return;
-    setActionStatus("Syncing timeline duration to narration audio...");
-    try {
-      const res = await studioApiFetch(
-        `/api/projects/${encodeURIComponent(projectId)}/handoff/sync-duration`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-      if (res && res.ok) {
-        const json = (await res.json()) as { durationSynced: number };
-        setActionStatus(`✓ Master timeline locked to ${json.durationSynced}s!`);
-        fetchHandoff();
-      } else {
-        setActionStatus("Failed to sync duration.");
-      }
-    } catch (e) {
-      setActionStatus(`Error: ${String(e)}`);
-    }
-    setTimeout(() => setActionStatus(null), 4000);
-  };
-
-  const handleGeneratePublishingPackage = async () => {
-    if (!projectId) return;
-    setActionStatus("Generating YouTube Publishing Package...");
-    try {
-      const res = await studioApiFetch(
-        `/api/projects/${encodeURIComponent(projectId)}/handoff/publish-package`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-      if (res && res.ok) {
-        const json = (await res.json()) as { package: string; filePath: string };
-        setPublishingPackageText(json.package);
-        setActionStatus("✓ Publishing Package created in Brief/!");
-        fetchHandoff();
-      } else {
-        setActionStatus("Failed to generate publishing package.");
-      }
-    } catch (e) {
-      setActionStatus(`Error: ${String(e)}`);
-    }
-    setTimeout(() => setActionStatus(null), 4000);
-  };
-
-  const handleDeliverMaster = async () => {
-    if (!projectId) return;
-    setActionStatus("Packaging Master Deliverable to exports/...");
-    try {
-      const res = await studioApiFetch(
-        `/api/projects/${encodeURIComponent(projectId)}/handoff/deliver-master`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-      if (res && res.ok) {
-        const json = (await res.json()) as { masterPath: string; sizeMb: string };
-        setActionStatus(`★ Master delivered to exports/ (${json.sizeMb} MB)!`);
-        fetchHandoff();
-      } else {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        setActionStatus(`Export Error: ${json.error || "No render found"}`);
-      }
-    } catch (e) {
-      setActionStatus(`Error: ${String(e)}`);
-    }
-    setTimeout(() => setActionStatus(null), 5000);
-  };
-
-  const handleCopyPackage = () => {
-    if (!publishingPackageText) return;
-    navigator.clipboard.writeText(publishingPackageText);
-    setCopiedNotice(true);
-    setTimeout(() => setCopiedNotice(false), 3000);
   };
 
   if (!projectId) {
@@ -225,6 +141,8 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
       </div>
     );
   }
+
+  const ep = data?.audio.frameEndpoint;
 
   return (
     <div className="p-3 text-neutral-200 space-y-3.5 h-full overflow-y-auto font-sans select-text">
@@ -243,7 +161,7 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
           type="button"
           onClick={() => void fetchHandoff()}
           disabled={loading}
-          className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 transition-colors"
+          className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 transition-colors cursor-pointer"
         >
           {loading ? "Checking..." : "↻ Refresh"}
         </button>
@@ -255,7 +173,7 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
         </div>
       )}
 
-      {/* 1. Research & Script Health */}
+      {/* 1. Script & Research (Brief/) */}
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wide">
@@ -293,11 +211,11 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
         )}
       </div>
 
-      {/* 2. Narration Audio Health & Duration Sync */}
+      {/* 2. Audio Duration vs Frame-Aligned Endpoint */}
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wide">
-            2. Audio Narration (Audio/)
+            2. Audio vs Frame Endpoint
           </span>
           <span
             className={`px-1.5 py-0.2 rounded text-[9.5px] font-mono font-semibold ${
@@ -306,30 +224,46 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
                 : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
             }`}
           >
-            {data?.audio.exists ? "Supplied" : "Missing Recording"}
+            {data?.audio.exists ? "Audio Supplied" : "Missing Recording"}
           </span>
         </div>
+
         {data?.audio.exists ? (
-          <div className="text-xs space-y-1.5">
+          <div className="text-xs space-y-2">
             <div className="text-neutral-200 truncate font-mono text-[11px]">{data.audio.fileName}</div>
-            <div className="text-[10.5px] text-neutral-400 font-mono grid grid-cols-2 gap-1 bg-neutral-950/80 p-1.5 rounded border border-neutral-800">
-              <div>Audio Duration: <span className="text-amber-300 font-bold">{data.audio.durationSeconds?.toFixed(2)}s</span></div>
-              <div>Timeline Duration: <span className="text-neutral-200">{data.audio.timelineDurationSeconds?.toFixed(2)}s</span></div>
-              <div>Sample Rate: <span className="text-neutral-300">{data.audio.sampleRate} Hz</span></div>
-              <div>Channels: <span className="text-neutral-300">{data.audio.channels === 1 ? "Mono" : "Stereo"}</span></div>
+            
+            <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono bg-neutral-950/90 p-2 rounded border border-neutral-800">
+              <div>
+                <span className="text-neutral-400 block text-[9px]">RAW AUDIO DURATION</span>
+                <span className="text-amber-300 font-bold text-xs">{data.audio.durationSeconds?.toFixed(3)}s</span>
+              </div>
+              <div>
+                <span className="text-neutral-400 block text-[9px]">PROPOSED FRAME CEILING</span>
+                <span className="text-emerald-300 font-bold text-xs">
+                  {ep?.ceilingFrames || "—"}f @ {ep?.fps || 30}fps
+                </span>
+              </div>
+              <div className="pt-1 border-t border-neutral-800/80">
+                <span className="text-neutral-400 block text-[9px]">FRAME-ALIGNED ENDPOINT</span>
+                <span className="text-neutral-200">{ep?.frameAlignedSeconds?.toFixed(3) || "—"}s</span>
+              </div>
+              <div className="pt-1 border-t border-neutral-800/80">
+                <span className="text-neutral-400 block text-[9px]">TIMELINE DURATION (Sources)</span>
+                <span className="text-neutral-200">{data.audio.timelineDurationSeconds?.toFixed(3) || "—"}s</span>
+              </div>
             </div>
 
-            {data.audio.isDurationInSync === false && (
-              <div className="flex items-center justify-between p-1.5 rounded bg-amber-500/10 border border-amber-500/30">
-                <span className="text-[10.5px] text-amber-300">
-                  Timeline differs by {data.audio.durationDiffSeconds?.toFixed(2)}s
-                </span>
+            {ep && ep.deltaFrames !== 0 && (
+              <div className="flex items-center justify-between p-2 rounded bg-amber-500/10 border border-amber-500/30">
+                <div className="text-[10px] text-amber-300">
+                  Timeline delta: <strong>{ep.deltaFrames > 0 ? `+${ep.deltaFrames}` : ep.deltaFrames} frames</strong> ({ep.deltaSeconds > 0 ? `+${ep.deltaSeconds}` : ep.deltaSeconds}s)
+                </div>
                 <button
                   type="button"
-                  onClick={() => void handleSyncDuration()}
-                  className="px-2 py-0.5 rounded bg-amber-500/30 hover:bg-amber-500/40 border border-amber-500/50 text-[10px] font-bold text-amber-200 transition-colors cursor-pointer"
+                  onClick={handleSimulateSyncDuration}
+                  className="px-2 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/35 border border-amber-500/40 text-[9.5px] font-bold text-amber-200 transition-colors cursor-pointer"
                 >
-                  ⚡ Sync Duration
+                  Inspect Endpoint
                 </button>
               </div>
             )}
@@ -341,221 +275,236 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
         )}
       </div>
 
-      {/* 3. Audio Timing Map & Alignment */}
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 space-y-2">
+      {/* 3. Asset Intake Inspector (Light/Dark Checkerboard Inspection) */}
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 space-y-2.5">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wide">
-            3. Timing Map & Cues (Timing/)
+            3. Asset Intake Inspector (Images/)
           </span>
-          <span
-            className={`px-1.5 py-0.2 rounded text-[9.5px] font-mono font-semibold ${
-              data?.timing.exists
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-            }`}
-          >
-            {data?.timing.exists ? "Aligned" : "Pending"}
-          </span>
-        </div>
-        {data?.timing.exists ? (
-          <div className="text-xs space-y-1 font-mono">
-            <div className="text-[11px] text-neutral-300">
-              Provenance: <span className="text-amber-300">{data.timing.provenance}</span>
-            </div>
-            <div className="text-[11px] text-neutral-400 flex items-center gap-3">
-              <span>Target: {data.timing.targetFrames}f @ {data.timing.fps}fps</span>
-              <span>Visual Cues: {data.timing.cueCount}</span>
-            </div>
-          </div>
-        ) : (
-          <p className="text-[11px] text-neutral-400 italic">
-            Run audio transcription into <code>Timing/{projectId}_Timing_Map.json</code>
-          </p>
-        )}
-      </div>
-
-      {/* 4. Production Visuals & Preflight Validator */}
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wide">
-            4. Visual Coverage & Preflight (Images/)
-          </span>
-          <div className="flex items-center gap-2">
-            {data?.assets.preflightIssues ? (
-              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9.5px] font-mono font-bold">
-                ⚠ {data.assets.preflightIssues} Issues
-              </span>
-            ) : (
-              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9.5px] font-mono font-bold">
-                ✓ Preflight Clean
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowAssetsTable((prev) => !prev)}
-              className="text-[10px] text-neutral-400 hover:text-white underline cursor-pointer"
-            >
-              {showAssetsTable ? "Hide Checklist" : "Inspect All"}
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-1.5 text-center text-xs font-mono">
-          <div className="bg-neutral-950/70 p-1.5 rounded border border-neutral-800">
-            <div className="text-white font-bold text-sm">{data?.assets.characters || 0}</div>
-            <div className="text-[9px] text-neutral-400">Characters</div>
-          </div>
-          <div className="bg-neutral-950/70 p-1.5 rounded border border-neutral-800">
-            <div className="text-white font-bold text-sm">{data?.assets.backgrounds || 0}</div>
-            <div className="text-[9px] text-neutral-400">Backdrops</div>
-          </div>
-          <div className="bg-neutral-950/70 p-1.5 rounded border border-neutral-800">
-            <div className="text-white font-bold text-sm">{data?.assets.props || 0}</div>
-            <div className="text-[9px] text-neutral-400">Props</div>
-          </div>
-          <div className="bg-neutral-950/70 p-1.5 rounded border border-neutral-800">
-            <div className="text-white font-bold text-sm">{data?.assets.totalImages || 0}</div>
-            <div className="text-[9px] text-neutral-400">Total</div>
-          </div>
-        </div>
-
-        {/* Expandable Asset Preflight Checklist */}
-        {showAssetsTable && (
-          <div className="mt-2 max-h-48 overflow-y-auto border border-neutral-800 rounded bg-neutral-950/90 p-1.5 space-y-1">
-            {data?.assets.items.map((item, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between gap-1 text-[10px] font-mono p-1 rounded hover:bg-neutral-900 border border-transparent hover:border-neutral-800"
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9.5px] text-neutral-400">Backdrop:</span>
+            <div className="flex rounded border border-neutral-700 overflow-hidden text-[9px] font-mono">
+              <button
+                type="button"
+                onClick={() => setCheckerTheme("dark")}
+                className={`px-1.5 py-0.5 ${checkerTheme === "dark" ? "bg-neutral-700 text-white font-bold" : "bg-neutral-900 text-neutral-400"}`}
+                title="Dark Checkerboard"
               >
-                <div className="truncate flex items-center gap-1.5 min-w-0">
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      item.status === "ok" ? "bg-emerald-400" : "bg-amber-400"
-                    }`}
-                  />
-                  <span className="truncate text-neutral-200">{item.fileName}</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 text-neutral-400">
-                  <span>{item.width}×{item.height}</span>
-                  <span
-                    className={`px-1 py-0.2 rounded text-[8.5px] font-bold ${
-                      item.hasAlpha
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : "bg-neutral-800 text-neutral-400"
-                    }`}
-                  >
-                    {item.hasAlpha ? "ALPHA" : "OPAQUE"}
-                  </span>
-                </div>
+                Dark
+              </button>
+              <button
+                type="button"
+                onClick={() => setCheckerTheme("light")}
+                className={`px-1.5 py-0.5 ${checkerTheme === "light" ? "bg-neutral-300 text-neutral-950 font-bold" : "bg-neutral-900 text-neutral-400"}`}
+                title="Light Checkerboard"
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                onClick={() => setCheckerTheme("black")}
+                className={`px-1.5 py-0.5 ${checkerTheme === "black" ? "bg-black text-white font-bold" : "bg-neutral-900 text-neutral-400"}`}
+                title="Pure Black"
+              >
+                Black
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Selected Asset Visual Cutout Preview */}
+        {selectedAsset && (
+          <div className="space-y-1.5 bg-neutral-950/80 p-2 rounded border border-neutral-800">
+            <div className="flex items-center justify-between text-[10px] font-mono">
+              <span className="text-white font-semibold truncate max-w-[180px]">{selectedAsset.fileName}</span>
+              <span className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold ${
+                selectedAsset.hasAlpha
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : selectedAsset.category === "background"
+                    ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                    : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+              }`}>
+                {selectedAsset.hasAlpha
+                  ? "ALPHA TRANSPARENT"
+                  : selectedAsset.category === "background"
+                    ? "OPAQUE BACKGROUND"
+                    : "OPAQUE WARNING"}
+              </span>
+            </div>
+
+            <div
+              className={`w-full h-32 rounded flex items-center justify-center overflow-hidden border border-neutral-800 relative ${
+                checkerTheme === "dark"
+                  ? "bg-[linear-gradient(45deg,#1f1f1f_25%,transparent_25%),linear-gradient(-45deg,#1f1f1f_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#1f1f1f_75%),linear-gradient(-45deg,transparent_75%,#1f1f1f_75%)] bg-[size:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0px] bg-neutral-950"
+                  : checkerTheme === "light"
+                    ? "bg-[linear-gradient(45deg,#e5e5e5_25%,transparent_25%),linear-gradient(-45deg,#e5e5e5_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e5e5e5_75%),linear-gradient(-45deg,transparent_75%,#e5e5e5_75%)] bg-[size:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0px] bg-white"
+                    : "bg-black"
+              }`}
+            >
+              <img
+                src={`/api/projects/${encodeURIComponent(projectId)}/asset-file/${encodeURIComponent(selectedAsset.fileName)}`}
+                alt={selectedAsset.fileName}
+                className="max-h-full max-w-full object-contain p-1"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = "none";
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[9.5px] font-mono text-neutral-400 pt-1">
+              <span>{selectedAsset.width}×{selectedAsset.height} px</span>
+              <span>{(selectedAsset.sizeBytes / 1024 / 1024).toFixed(2)} MB</span>
+              <span className="capitalize">{selectedAsset.category}</span>
+            </div>
+
+            {selectedAsset.warning && (
+              <div className="p-1 rounded bg-amber-500/10 border border-amber-500/30 text-[9px] text-amber-300 font-mono">
+                ⚠ {selectedAsset.warning}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Thumbnail Selector Strip */}
+        <div className="space-y-1">
+          <div className="text-[9.5px] text-neutral-400 font-mono flex items-center justify-between">
+            <span>Episode Assets ({data?.assets.totalImages || 0})</span>
+            <span className="text-[9px] text-neutral-500">Click to inspect edges</span>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5 max-h-36 overflow-y-auto pr-1">
+            {data?.assets.items.map((item, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setSelectedAsset(item)}
+                className={`p-1 rounded text-left border transition-all cursor-pointer ${
+                  selectedAsset?.fileName === item.fileName
+                    ? "bg-neutral-800 border-amber-400"
+                    : "bg-neutral-950 border-neutral-800 hover:border-neutral-700"
+                }`}
+              >
+                <div className="w-full h-10 bg-neutral-900 rounded overflow-hidden flex items-center justify-center relative">
+                  <img
+                    src={`/api/projects/${encodeURIComponent(projectId)}/asset-file/${encodeURIComponent(item.fileName)}`}
+                    alt={item.fileName}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                  {!item.hasAlpha && item.category !== "background" && (
+                    <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-amber-400" title="Opaque warning" />
+                  )}
+                </div>
+                <div className="text-[8.5px] font-mono truncate text-neutral-300 mt-1">{item.fileName}</div>
+              </button>
             ))}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* 5. Publishing Package (YouTube Description & Chapters) */}
+      {/* 4. Revision Statuses (Distinguishing Implemented, Checked, Owner-Approved) */}
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wide">
-            5. Publishing Package (Brief/)
+            4. Revision Lifecycle (QC/)
           </span>
-          <button
-            type="button"
-            onClick={() => void handleGeneratePublishingPackage()}
-            className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold cursor-pointer transition-colors"
-          >
-            {data?.delivery.hasPublishingPackage ? "↻ Re-generate" : "＋ Generate Package"}
-          </button>
+          <span className="text-[10px] text-neutral-400 font-mono">
+            {data?.revisions.recentRevisions.length || 0} Entries
+          </span>
         </div>
 
-        {publishingPackageText ? (
-          <div className="space-y-1.5">
-            <textarea
-              readOnly
-              value={publishingPackageText}
-              rows={5}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-[10px] font-mono text-neutral-300 resize-none outline-hidden"
-            />
-            <button
-              type="button"
-              onClick={handleCopyPackage}
-              className="w-full py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
-            >
-              {copiedNotice ? "✓ Copied to Clipboard!" : "📋 Copy YouTube Description & Chapters"}
-            </button>
-          </div>
-        ) : (
-          <p className="text-[10.5px] text-neutral-400 italic">
-            Generates YouTube video title, clickable chapter timestamps, tags, and pinned comment from script and timeline.
-          </p>
-        )}
-      </div>
+        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+          {data?.revisions.recentRevisions.length ? (
+            data.revisions.recentRevisions.map((rev, i) => {
+              const statusColor =
+                rev.status === "owner-approved"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                  : rev.status === "checked"
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                    : rev.status === "implemented"
+                      ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                      : "bg-neutral-800 text-neutral-300 border-neutral-700";
 
-      {/* 6. Master Delivery & Export Actions */}
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900/90 p-3 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <div className="text-[11px] font-bold text-white uppercase tracking-wide">
-            6. Master Delivery (exports/)
-          </div>
-          {data?.delivery.hasFinalMaster ? (
-            <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9.5px] font-mono font-bold">
-              ★ Master Delivered
-            </span>
+              return (
+                <div key={i} className="bg-neutral-950/80 p-2 rounded border border-neutral-800 text-[10.5px] space-y-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className={`px-1.5 py-0.2 rounded text-[8.5px] font-mono font-bold uppercase border ${statusColor}`}>
+                      {rev.status}
+                    </span>
+                    {rev.timeSeconds !== undefined && (
+                      <span className="text-[9.5px] font-mono text-neutral-400">
+                        {rev.timeSeconds.toFixed(2)}s ({rev.frame}f)
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-semibold text-neutral-200 truncate">{rev.title}</div>
+                  {rev.scene && (
+                    <div className="text-[9px] font-mono text-neutral-400 truncate">
+                      Scene: <span className="text-neutral-300">{rev.scene}</span> {rev.target ? `· Target: ${rev.target}` : ""}
+                    </div>
+                  )}
+                  {rev.note && <p className="text-neutral-300 text-[10px] italic">"{rev.note}"</p>}
+                </div>
+              );
+            })
           ) : (
-            <span className="px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 text-[9.5px] font-mono">
-              Pending Authorization
-            </span>
+            <p className="text-[11px] text-neutral-400 italic">No revision notes recorded yet.</p>
           )}
         </div>
+      </div>
 
-        {data?.delivery.finalMasterPath && (
-          <div className="p-1.5 rounded bg-neutral-950 border border-neutral-800 font-mono text-[10px] text-emerald-400 truncate">
-            {data.delivery.finalMasterPath}
+      {/* 5. Review Render & Delivery Status */}
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wide">
+            5. Review Render (Previews/)
+          </span>
+          <span className={`px-1.5 py-0.2 rounded text-[9.5px] font-mono font-semibold ${
+            data?.delivery.hasDraftRender
+              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+              : "bg-neutral-800 text-neutral-400"
+          }`}>
+            {data?.delivery.hasDraftRender ? "Review Render Ready" : "No Render in Previews/"}
+          </span>
+        </div>
+        {data?.delivery.draftRenderPath && (
+          <div className="p-1.5 rounded bg-neutral-950 border border-neutral-800 font-mono text-[9.5px] text-neutral-300 truncate">
+            {data.delivery.draftRenderPath}
           </div>
         )}
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void handleDeliverMaster()}
-            className="flex-1 py-1.5 bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-500/50 text-[11px] font-bold rounded transition-colors cursor-pointer text-center"
-          >
-            ★ Deliver Master to exports/
-          </button>
-        </div>
-
-        <input
-          type="text"
-          value={approvalNote}
-          onChange={(e) => setApprovalNote(e.target.value)}
-          placeholder="Owner approval note (e.g. 'Script approved for voice recording')..."
-          className="w-full bg-neutral-950 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-white outline-hidden focus:border-amber-400"
-        />
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => void handleApprove("script")}
-            className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-semibold rounded transition-colors cursor-pointer"
-          >
-            ✓ Approve Script
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleApprove("audio")}
-            className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-semibold rounded transition-colors cursor-pointer"
-          >
-            ✓ Approve VO
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleApprove("revisions")}
-            className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-semibold rounded transition-colors cursor-pointer"
-          >
-            ✓ Approve Revisions
-          </button>
-        </div>
       </div>
+
+      {/* Confirmation Modal for Endpoint Inspection */}
+      {showEndpointModal && ep && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-lg max-w-sm w-full p-4 space-y-3 font-sans text-xs">
+            <div className="text-sm font-bold text-white flex items-center gap-2">
+              <span className="text-amber-400">⚡</span>
+              <span>Audio Frame Endpoint Inspection</span>
+            </div>
+            <p className="text-neutral-300 text-[11px]">
+              Calculates the exact integer frame boundary to guarantee decoded audio playback tail is not clipped:
+            </p>
+            <div className="space-y-1 bg-neutral-950 p-2.5 rounded border border-neutral-800 font-mono text-[10.5px]">
+              <div>Decoded Audio: <strong className="text-amber-300">{ep.rawDurationSeconds}s</strong></div>
+              <div>Project FPS: <strong className="text-white">{ep.fps} fps</strong></div>
+              <div>Ceiling Frames: <strong className="text-emerald-300">{ep.ceilingFrames} frames</strong></div>
+              <div>Frame-Aligned Time: <strong className="text-emerald-300">{ep.frameAlignedSeconds}s</strong></div>
+              <div>Current Timeline: <strong className="text-neutral-400">{data?.audio.timelineDurationSeconds}s</strong></div>
+              <div className="pt-1 border-t border-neutral-800 text-amber-200">
+                Delta: {ep.deltaFrames} frames ({ep.deltaSeconds}s)
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowEndpointModal(false)}
+                className="px-3 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold cursor-pointer"
+              >
+                Close (Read-Only)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
