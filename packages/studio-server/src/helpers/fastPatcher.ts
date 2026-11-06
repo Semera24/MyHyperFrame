@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileContentVersion } from "./fileVersion.js";
 
 export interface FastPatchResult {
   ok: boolean;
@@ -10,6 +11,7 @@ export interface FastPatchResult {
   durationMs: number;
   error?: string;
   canFallbackToCli?: boolean;
+  fileVersion?: string;
 }
 
 const COMMON_COLOR_NAMES = new Set([
@@ -308,6 +310,18 @@ function patchImageSrcInHtml(
   return { newHtml: html, diffs };
 }
 
+function safeWriteHtml(
+  targetPath: string,
+  newHtml: string,
+): { ok: true; version: string } | { ok: false; error: string } {
+  try {
+    writeFileSync(targetPath, newHtml, "utf-8");
+    return { ok: true, version: fileContentVersion(newHtml) };
+  } catch (err) {
+    return { ok: false, error: `Failed to save changes to ${targetPath}: ${String(err)}` };
+  }
+}
+
 /**
  * Main entry point: Executes an instant scoped fast-patch on the target file (< 50ms).
  */
@@ -317,6 +331,7 @@ export async function executeFastPatch(opts: {
   elementId?: string;
   prompt: string;
   apiKey?: string;
+  expectedVersion?: string;
 }): Promise<FastPatchResult> {
   const t0 = Date.now();
   const sceneRelPath = opts.sceneFile || "index.html";
@@ -370,12 +385,34 @@ export async function executeFastPatch(opts: {
     };
   }
 
+  // Conflict detection: verify external IDE edits
+  if (opts.expectedVersion) {
+    const currentVersion = fileContentVersion(html);
+    if (currentVersion !== opts.expectedVersion) {
+      return {
+        ok: false,
+        patched: false,
+        durationMs: Date.now() - t0,
+        canFallbackToCli: false,
+        error: `Conflict: External edit detected in ${sceneRelPath}. Stale Studio edit cannot overwrite it.`,
+      };
+    }
+  }
+
   // 1. Try CSS Style mutations
   const styleMutations = extractStyleMutations(opts.prompt);
   if (Object.keys(styleMutations).length > 0) {
     const { newHtml, diffs } = patchCssInHtml(html, cleanElementId, styleMutations);
     if (diffs.length > 0 && newHtml !== html) {
-      writeFileSync(targetPath, newHtml, "utf-8");
+      const writeRes = safeWriteHtml(targetPath, newHtml);
+      if (!writeRes.ok) {
+        return {
+          ok: false,
+          patched: false,
+          durationMs: Date.now() - t0,
+          error: writeRes.error,
+        };
+      }
       return {
         ok: true,
         patched: true,
@@ -383,6 +420,7 @@ export async function executeFastPatch(opts: {
         elementId: cleanElementId,
         diffSummary: diffs.join("; "),
         durationMs: Date.now() - t0,
+        fileVersion: writeRes.version,
       };
     }
   }
@@ -392,7 +430,15 @@ export async function executeFastPatch(opts: {
   if (textUpdate) {
     const { newHtml, diffs } = patchTextInHtml(html, cleanElementId, textUpdate);
     if (diffs.length > 0 && newHtml !== html) {
-      writeFileSync(targetPath, newHtml, "utf-8");
+      const writeRes = safeWriteHtml(targetPath, newHtml);
+      if (!writeRes.ok) {
+        return {
+          ok: false,
+          patched: false,
+          durationMs: Date.now() - t0,
+          error: writeRes.error,
+        };
+      }
       return {
         ok: true,
         patched: true,
@@ -400,6 +446,7 @@ export async function executeFastPatch(opts: {
         elementId: cleanElementId,
         diffSummary: diffs.join("; "),
         durationMs: Date.now() - t0,
+        fileVersion: writeRes.version,
       };
     }
   }
@@ -409,7 +456,15 @@ export async function executeFastPatch(opts: {
   if (imageUpdate) {
     const { newHtml, diffs } = patchImageSrcInHtml(html, cleanElementId, imageUpdate);
     if (diffs.length > 0 && newHtml !== html) {
-      writeFileSync(targetPath, newHtml, "utf-8");
+      const writeRes = safeWriteHtml(targetPath, newHtml);
+      if (!writeRes.ok) {
+        return {
+          ok: false,
+          patched: false,
+          durationMs: Date.now() - t0,
+          error: writeRes.error,
+        };
+      }
       return {
         ok: true,
         patched: true,
@@ -417,6 +472,7 @@ export async function executeFastPatch(opts: {
         elementId: cleanElementId,
         diffSummary: diffs.join("; "),
         durationMs: Date.now() - t0,
+        fileVersion: writeRes.version,
       };
     }
   }

@@ -768,14 +768,23 @@ export function registerAgentRoutes(api: Hono, adapter: StudioApiAdapter): void 
       elementId?: string;
       prompt?: string;
       apiKey?: string;
+      expectedVersion?: string;
     } | null;
 
     if (!body || !body.prompt || !body.prompt.trim()) {
       return c.json({ ok: false, error: "prompt is required" }, 400);
     }
 
-    let project = body.projectId ? await adapter.resolveProject(body.projectId) : null;
-    if (!project) {
+    let project = null;
+    if (body.projectId) {
+      project = await adapter.resolveProject(body.projectId);
+      if (!project) {
+        return c.json(
+          { ok: false, error: `Project '${body.projectId}' not found or no longer active` },
+          404,
+        );
+      }
+    } else {
       const all = await adapter.listProjects();
       project = all[0] ?? null;
     }
@@ -794,6 +803,7 @@ export function registerAgentRoutes(api: Hono, adapter: StudioApiAdapter): void 
       elementId: body.elementId,
       prompt: body.prompt,
       apiKey: body.apiKey,
+      expectedVersion: body.expectedVersion,
     });
 
     if (result.patched && project) {
