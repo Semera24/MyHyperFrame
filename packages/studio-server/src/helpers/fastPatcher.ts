@@ -71,7 +71,6 @@ export function isFastPatchEligible(prompt: string, elementId?: string): boolean
 function extractStyleMutations(prompt: string): Record<string, string> {
   const mutations: Record<string, string> = {};
   const p = prompt.trim();
-  const lower = p.toLowerCase();
 
   // 1. Color extraction
   // Handles: "change color to blue", "color: #ff0000", "make text green", "color to rgba(0,0,0,0.5)"
@@ -242,11 +241,11 @@ function patchCssInHtml(
     const styleAttrEntries = Object.entries(styleUpdates)
       .map(([k, v]) => `${k}:${v}`)
       .join("; ");
-    const newHtml = html.replace(elemRegex, (_m, openTag) => {
+    const newHtml = html.replace(elemRegex, (_m: string, openTag: string) => {
       if (/style=["']/i.test(openTag)) {
         return openTag.replace(
           /style=["']([^"']*)["']/i,
-          (_s, existing) => `style="${existing.trimEnd()}; ${styleAttrEntries}"`,
+          (_s: string, existing: string) => `style="${existing.trimEnd()}; ${styleAttrEntries}"`,
         );
       }
       return `${openTag} style="${styleAttrEntries}">`;

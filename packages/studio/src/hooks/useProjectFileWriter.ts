@@ -7,6 +7,7 @@ import {
 } from "../utils/studioSaveDiagnostics";
 import { studioExpectedFileVersion, studioWriteHeaders } from "../utils/studioFileVersion";
 import { studioApiFetch } from "../utils/studioApiFetch";
+import { assertProjectUrlAgreement } from "../utils/projectRouting";
 
 export interface UseProjectFileWriterOptions {
   projectId: string | null;
@@ -61,6 +62,7 @@ export function useProjectFileWriter({ projectId }: UseProjectFileWriterOptions)
   const writeProjectFile = useCallback(
     async (path: string, content: string, expectedContent?: string): Promise<void> => {
       if (!projectId) throw new Error("No active project");
+      assertProjectUrlAgreement(projectId);
       const writeProjectId = projectId;
       let expectedVersion = await studioExpectedFileVersion(fileVersions, path, expectedContent);
       if (expectedVersion === undefined) {

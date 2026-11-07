@@ -282,6 +282,11 @@ export function dispatchPlainKey(event: KeyboardEvent, _key: string, cb: HotkeyC
     if (selected.length > 0) {
       event.preventDefault();
       void cb.handleTimelineElementsDelete(selected);
+      return;
+    }
+    if (domSel && !cb.readOnlyPreview) {
+      event.preventDefault();
+      void cb.handleDomEditElementDelete(domSel, { expandGroup: true });
     }
     return;
   }

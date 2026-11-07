@@ -39,8 +39,10 @@ import { useCropPresetBarStore } from "./cropPresetStore";
 import {
   detectUnbundleCandidate,
   groupSelectedElementsIntoLayer,
+  toggleDomLayerHidden,
   unbundleElementContainer,
 } from "../../utils/studioLayerActions";
+import { classifyLayerDeletionSafety } from "./InspectorLayerActions";
 import { usePlayerStore } from "../../player";
 
 interface CanvasContextMenuProps {
@@ -399,21 +401,54 @@ export const CanvasContextMenu = memo(function CanvasContextMenu({
 
       {hasDivider && <div className={menuClasses.divider} />}
 
-      {hasDelete && (
-        <button
-          type="button"
-          className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-danger-ink hover:bg-neutral-800 cursor-pointer text-left"
-          onPointerDown={(e) => {
-            if (e.button !== 0) return;
-            e.preventDefault();
-            e.stopPropagation();
-            handleDelete();
-          }}
-        >
-          <span>Delete</span>
-          <span className="text-neutral-500 text-[10px] ml-3">⌫</span>
-        </button>
-      )}
+      {hasDelete &&
+        (() => {
+          const safety = nle ? classifyLayerDeletionSafety(selection) : null;
+          if (safety?.handAuthored && nle) {
+            const isHidden = el.hasAttribute("data-hidden");
+            return (
+              <div className="py-0.5">
+                <div className="px-3 py-1 text-[10px] text-amber-300/90 leading-snug">
+                  Authored in source HTML (delete locked)
+                </div>
+                <button
+                  type="button"
+                  data-testid="context-menu-hide-in-studio"
+                  className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-amber-200 hover:bg-neutral-800 cursor-pointer text-left"
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void toggleDomLayerHidden({
+                      element: el,
+                      projectId: nle.projectId,
+                      activeCompPath,
+                    });
+                    onClose();
+                  }}
+                >
+                  <span>{isHidden ? "Show in Studio" : "Hide in Studio"}</span>
+                </button>
+              </div>
+            );
+          }
+          return (
+            <button
+              type="button"
+              data-testid="context-menu-delete-layer"
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-danger-ink hover:bg-neutral-800 cursor-pointer text-left"
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                handleDelete();
+              }}
+            >
+              <span>{safety?.isSceneComposition ? "Delete Scene" : "Delete Layer"}</span>
+              <span className="text-neutral-500 text-[10px] ml-3">⌫</span>
+            </button>
+          );
+        })()}
     </div>,
     document.body,
   );

@@ -59,6 +59,48 @@
   padding: 6px 0 0 4px;
 }
 
+/* In Studio workspace, CreationDockHeader and RightInspectorHeader replace Dockview's group tab strips */
+[data-studio-workspace="true"] .hf-dock {
+  --dv-tabs-and-actions-container-height: 0px;
+}
+
+[data-studio-workspace="true"] .hf-dock .dv-groupview > .dv-tabs-and-actions-container {
+  display: none !important;
+  height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Keep the center video preview unobstructed by hiding the bottom-left floating comment mode bar */
+[data-studio-workspace="true"] .bottom-3.left-3 {
+  display: none !important;
+}
+
+/* Collapse occasional timeline buttons into the Guides & Tools menu in the dock workspace */
+[data-studio-workspace="true"]
+  [data-studio-timeline="true"]
+  button[aria-label="Toggle 90x70 safe margin guide"],
+[data-studio-workspace="true"]
+  [data-studio-timeline="true"]
+  button[aria-label="Cycle cutout backdrop mode"],
+[data-studio-workspace="true"]
+  [data-studio-timeline="true"]
+  button[aria-label="Toggle Comment on Canvas mode"],
+[data-studio-workspace="true"]
+  [data-studio-timeline="true"]
+  button[aria-label="Pin revision note to QC"],
+[data-studio-workspace="true"]
+  [data-studio-timeline="true"]
+  button[aria-label="Crop selected layer"],
+[data-studio-workspace="true"]
+  [data-studio-timeline="true"]
+  button[aria-label="Group selected layers"],
+[data-studio-workspace="true"]
+  [data-studio-timeline="true"]
+  button[aria-label="Unbundle Grid/Flex into free layers"] {
+  display: none !important;
+}
+
 .hf-dock .dv-scrollable {
   height: 30px;
   min-width: 0;

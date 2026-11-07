@@ -254,13 +254,22 @@ export const ClipContextMenu = memo(function ClipContextMenu({
         <button
           type="button"
           role="menuitem"
+          data-testid={
+            Boolean(element.compositionSrc) || element.kind === "composition"
+              ? "clip-menu-delete-scene"
+              : "clip-menu-delete-layer"
+          }
           className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-danger-ink hover:bg-neutral-800 focus-visible:bg-neutral-800 outline-hidden cursor-pointer text-left"
           onClick={() => {
             onDelete(element);
             onClose();
           }}
         >
-          <span>Delete</span>
+          <span>
+            {Boolean(element.compositionSrc) || element.kind === "composition"
+              ? "Delete Scene"
+              : "Delete Layer"}
+          </span>
           <span className="text-neutral-500 text-[10px] ml-3">⌫</span>
         </button>
         {tools && <ClipMenuLinkItems part="delete" element={element} onClose={onClose} />}

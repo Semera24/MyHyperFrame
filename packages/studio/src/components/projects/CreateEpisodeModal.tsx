@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { navigateToProject } from "../../utils/projectRouting";
 import { studioApiFetch } from "../../utils/studioApiFetch";
 
 interface CreateEpisodeModalProps {
@@ -7,11 +8,7 @@ interface CreateEpisodeModalProps {
   onCreated?: (episodeId: string) => void;
 }
 
-export function CreateEpisodeModal({
-  isOpen,
-  onClose,
-  onCreated,
-}: CreateEpisodeModalProps) {
+export function CreateEpisodeModal({ isOpen, onClose, onCreated }: CreateEpisodeModalProps) {
   const [episodeId, setEpisodeId] = useState("EP06_");
   const [title, setTitle] = useState("");
   const [centralQuestion, setCentralQuestion] = useState(
@@ -50,7 +47,7 @@ export function CreateEpisodeModal({
           onCreated?.(data.episodeId);
           onClose();
           // Redirect immediately to the newly scaffolded authoritative episode
-          window.location.assign(`/?project=${encodeURIComponent(data.episodeId)}`);
+          navigateToProject(data.episodeId);
         } else {
           setErrorMsg(data.error || "Failed to scaffold episode");
         }
@@ -93,9 +90,7 @@ export function CreateEpisodeModal({
         {/* Form fields */}
         <div className="space-y-3 text-xs">
           <div>
-            <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
-              Channel
-            </label>
+            <label className="block text-[11px] font-semibold text-neutral-300 mb-1">Channel</label>
             <input
               type="text"
               value={channel}
@@ -117,7 +112,10 @@ export function CreateEpisodeModal({
               className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-white font-mono focus:border-amber-400 outline-hidden"
             />
             <span className="text-[10px] text-neutral-500 mt-0.5 block">
-              Will be created at <code className="text-amber-400 font-mono">ProductionStudio/channels/{channel}/episodes/{episodeId}</code>
+              Will be created at{" "}
+              <code className="text-amber-400 font-mono">
+                ProductionStudio/channels/{channel}/episodes/{episodeId}
+              </code>
             </span>
           </div>
 

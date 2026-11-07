@@ -304,6 +304,7 @@ function EditorShellBody({
   return (
     <div
       ref={containerRef}
+      data-studio-workspace="true"
       className="flex flex-col flex-1 min-h-0"
       onKeyDown={handleKeyDown}
       tabIndex={-1}

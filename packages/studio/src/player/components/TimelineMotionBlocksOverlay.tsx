@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { TimelineElement } from "../store/playerStore";
 import { useStudioShellContextOptional } from "../../contexts/StudioContext";
 import { useFileManagerContextOptional } from "../../contexts/FileManagerContext";
@@ -22,7 +22,6 @@ import {
   useStudioMotionStore,
 } from "../../components/editor/useStudioMotionStore";
 import { getActiveDraggedMotionPayload } from "../../components/panels/MotionLibraryPanel";
-import { getTimelineElementIdentity } from "../lib/timelineElementHelpers";
 
 export interface TimelineMotionBlocksOverlayProps {
   trackNum: number;
@@ -43,7 +42,7 @@ const BLOCK_STYLES: Record<StudioMotionCategory, string> = {
   exit: "border-rose-400/90 bg-rose-600/85 text-white shadow-[0_1px_6px_rgba(244,63,94,0.45)]",
   path: "border-cyan-400/90 bg-cyan-600/85 text-white shadow-[0_1px_6px_rgba(6,182,212,0.45)]",
   transition:
-    "border-purple-400/95 bg-purple-600/90 text-white shadow-[0_1px_8px_rgba(168,85,247,0.55)]",
+    "border-purple-400 bg-purple-900/95 text-purple-50 shadow-[0_2px_8px_rgba(88,28,135,0.75)]",
 };
 
 function readDropPayload(e: React.DragEvent): StudioMotionDragPayload | null {
@@ -88,13 +87,18 @@ export function TimelineMotionBlocksOverlay({
 
   const primaryEl = trackElements[0];
   const primaryId = primaryEl ? primaryEl.domId || primaryEl.id : "";
-  const primaryTarget: StudioMotionTarget | null = primaryEl
-    ? {
-        sourceFile: primaryEl.sourceFile || activeCompPath || "index.html",
-        id: primaryId,
-        selector: `#${primaryId}`,
-      }
-    : null;
+  const primarySourceFile = primaryEl?.sourceFile || activeCompPath || "index.html";
+  const primaryTarget = useMemo<StudioMotionTarget | null>(
+    () =>
+      primaryEl
+        ? {
+            sourceFile: primarySourceFile,
+            id: primaryId,
+            selector: `#${primaryId}`,
+          }
+        : null,
+    [primaryEl, primaryId, primarySourceFile],
+  );
 
   // Gather all motions belonging to any element on this track row
   const rowMotions: Array<{
@@ -433,7 +437,7 @@ export function TimelineMotionBlocksOverlay({
       onDrop={(e) => void handleTrackDrop(e)}
       className="pointer-events-none absolute inset-0 z-30"
     >
-      {/* Top 14px drop strip is always pointer-events-auto (expands to full track during active preset drag) */}
+      {/* Top drop strip expands and enables pointer events during active preset drag */}
       <div
         data-testid={`timeline-motion-dropzone-${primaryTarget?.id || trackNum}`}
         onDragOver={(e) => {
@@ -445,8 +449,10 @@ export function TimelineMotionBlocksOverlay({
         }}
         onDragLeave={() => setDragHoverTime(null)}
         onDrop={(e) => void handleTrackDrop(e)}
-        className={`pointer-events-auto absolute inset-x-0 top-0 ${
-          dragHoverTime !== null || getActiveDraggedMotionPayload() !== null ? "h-full" : "h-3.5"
+        className={`absolute inset-x-0 top-0 ${
+          dragHoverTime !== null || getActiveDraggedMotionPayload() !== null
+            ? "pointer-events-auto h-full"
+            : "pointer-events-none h-3.5"
         }`}
       />
 
@@ -471,7 +477,9 @@ export function TimelineMotionBlocksOverlay({
         const widthPx = Math.max(38, motion.duration * pps);
         const cat = motion.category ?? "entrance";
         const isSelected = selectedMotionId === motion.id;
-        const topOffsetPx = 3 + (orderIndex % 2) * 14;
+        // Position motion & transition blocks in the dedicated lower lane (top: 22px)
+        // below the 20px clip title header so scene & layer titles stay 100% legible.
+        const topOffsetPx = 22;
 
         return (
           <div
@@ -490,7 +498,7 @@ export function TimelineMotionBlocksOverlay({
               left: leftPx,
               width: widthPx,
               top: topOffsetPx,
-              height: 17,
+              height: 18,
             }}
             className={`pointer-events-auto absolute z-40 flex items-center justify-between rounded border px-1.5 font-mono text-[9px] select-none transition-shadow ${
               BLOCK_STYLES[cat]

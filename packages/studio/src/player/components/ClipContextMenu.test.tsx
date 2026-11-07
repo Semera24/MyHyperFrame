@@ -53,7 +53,7 @@ describe("ClipContextMenu host items", () => {
       [{ id: "ask", label: "Ask", icon: <svg data-testid="ask-icon" />, shortcut: "A", onSelect }],
       onClose,
     );
-    expect(items().map((item) => item.textContent)).toEqual(["AskA", "Copy⌘C", "Delete⌫"]);
+    expect(items().map((item) => item.textContent)).toEqual(["AskA", "Copy⌘C", "Delete Layer⌫"]);
     expect(items()[0]!.querySelector("[data-testid=ask-icon]")).not.toBeNull();
     act(() => items()[0]!.click());
     expect(onSelect).toHaveBeenCalledOnce();
@@ -112,7 +112,7 @@ describe("ClipContextMenu host items", () => {
 
   it("shows only Studio's items when the host adds none", () => {
     const { items, unmount } = renderMenu([]);
-    expect(items().map((item) => item.textContent)).toEqual(["Copy⌘C", "Delete⌫"]);
+    expect(items().map((item) => item.textContent)).toEqual(["Copy⌘C", "Delete Layer⌫"]);
     expect(document.body.querySelector("[role=group][aria-label=Host]")).toBeNull();
     unmount();
   });

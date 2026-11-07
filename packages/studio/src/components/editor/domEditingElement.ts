@@ -356,17 +356,20 @@ export function findElementForTimelineElement(
         ? `[data-composition-id="${escapedElementId}"]`
         : undefined);
 
-  if (selector || element.domId) {
-    const targetElement = findElementForSelection(
-      doc,
-      {
-        id: element.domId ?? undefined,
-        selector,
-        selectorIndex: element.selectorIndex,
-        sourceFile,
-      },
-      options.activeCompositionPath,
-    );
+  if (selector || element.domId || elementId) {
+    const lookup = {
+      id: element.domId ?? (elementId || undefined),
+      selector,
+      selectorIndex: element.selectorIndex,
+      sourceFile,
+    };
+    const targetElement =
+      findElementForSelection(doc, lookup, options.activeCompositionPath) ??
+      findElementForSelection(
+        doc,
+        { ...lookup, sourceFile: undefined },
+        options.activeCompositionPath,
+      );
     if (targetElement) return targetElement;
   }
 

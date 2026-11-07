@@ -82,7 +82,11 @@ export const SnapToolbar = memo(function SnapToolbar() {
 
   return (
     <div
-      className="pointer-events-auto absolute top-2 right-2 z-50 flex items-center gap-1"
+      className={`pointer-events-auto absolute top-2 right-2 z-50 flex items-center gap-1 transition-opacity ${
+        gridPopoverOpen || motionPathArmed
+          ? "opacity-100"
+          : "opacity-0 group-hover/preview:opacity-100 focus-within:opacity-100"
+      }`}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {motionPathCreateAvailable && (

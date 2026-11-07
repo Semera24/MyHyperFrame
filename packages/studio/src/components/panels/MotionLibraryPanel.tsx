@@ -36,6 +36,7 @@ import {
   getMotionsForTarget,
   useStudioMotionStore,
 } from "../editor/useStudioMotionStore";
+import { computeSmartMotionStart, type MotionPlacementMode } from "../editor/studioMotionAgent";
 
 // Global fallback for drag payload so synthetic DragEvents in automated tests or restricted webviews work reliably
 let activeDraggedMotionPayload: StudioMotionDragPayload | null = null;
@@ -187,6 +188,43 @@ export function MotionLibraryPanel({ recordEdit }: MotionLibraryPanelProps) {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<"all" | StudioMotionCategory>("all");
+  const [manualTargetId, setManualTargetId] = useState<string>("");
+  const [placementMode, setPlacementMode] = useState<MotionPlacementMode>("playhead");
+
+  const selectedTimelineClip = usePlayerStore((s) =>
+    s.elements.find((el) => {
+      const key = el.key ?? el.id;
+      return s.selectedElementIds instanceof Set
+        ? s.selectedElementIds.has(key) || s.selectedElementIds.has(el.id)
+        : Array.isArray(s.selectedElementIds) &&
+            ((s.selectedElementIds as string[]).includes(key) ||
+              (s.selectedElementIds as string[]).includes(el.id));
+    }),
+  );
+
+  const addressableTargets = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Array<{
+      id: string;
+      label: string;
+      sourceFile: string;
+      start: number;
+      duration: number;
+    }> = [];
+    for (const el of timelineElements) {
+      const rawId = el.domId || el.id.split("/").pop() || el.id;
+      if (!rawId || seen.has(rawId)) continue;
+      seen.add(rawId);
+      list.push({
+        id: rawId,
+        label: el.label || rawId,
+        sourceFile: el.sourceFile || el.compositionSrc || activeCompPath || "index.html",
+        start: el.start,
+        duration: el.duration,
+      });
+    }
+    return list;
+  }, [timelineElements, activeCompPath]);
 
   // Load studio-motion.json on mount / project switch & listen for Undo/Redo updates
   useEffect(() => {
@@ -243,17 +281,50 @@ export function MotionLibraryPanel({ recordEdit }: MotionLibraryPanelProps) {
     });
   }, [searchQuery, selectedCategory]);
 
-  // Determine active target from DOM selection or fallback to active motion entry
+  // Determine active target from explicit dropdown, DOM selection, timeline selection, or active motion entry
   const selectedTarget = useMemo<StudioMotionTarget | null>(() => {
+    if (manualTargetId) {
+      const match = addressableTargets.find((t) => t.id === manualTargetId);
+      return {
+        sourceFile: match?.sourceFile || activeCompPath || "index.html",
+        id: manualTargetId,
+        selector: `#${manualTargetId}`,
+      };
+    }
     if (domEditSelection) {
       return selectionTarget(domEditSelection);
+    }
+    if (selectedTimelineClip) {
+      const rawId =
+        selectedTimelineClip.domId ||
+        selectedTimelineClip.id.split("/").pop() ||
+        selectedTimelineClip.id;
+      if (rawId) {
+        return {
+          sourceFile:
+            selectedTimelineClip.sourceFile ||
+            selectedTimelineClip.compositionSrc ||
+            activeCompPath ||
+            "index.html",
+          id: rawId,
+          selector: `#${rawId}`,
+        };
+      }
     }
     if (selectedMotionId) {
       const found = manifest.motions.find((m) => m.id === selectedMotionId);
       if (found) return found.target;
     }
     return null;
-  }, [domEditSelection, selectedMotionId, manifest.motions]);
+  }, [
+    manualTargetId,
+    addressableTargets,
+    activeCompPath,
+    domEditSelection,
+    selectedTimelineClip,
+    selectedMotionId,
+    manifest.motions,
+  ]);
 
   const selectedTargetMotions = useMemo<StudioGsapMotion[]>(() => {
     return getMotionsForTarget(manifest, selectedTarget);
@@ -455,8 +526,18 @@ export function MotionLibraryPanel({ recordEdit }: MotionLibraryPanelProps) {
         return;
       }
 
+      const targetMeta = addressableTargets.find((t) => t.id === selectedTarget.id);
+      const start = computeSmartMotionStart({
+        category: preset.category,
+        duration: preset.defaultDuration,
+        clipStart: targetMeta?.start ?? 0,
+        clipDuration: targetMeta?.duration ?? 3.0,
+        placement: placementMode,
+        playheadTime: currentTime,
+      });
+
       const compiled = compileMotionPreset(preset.id, {
-        start: Number(currentTime.toFixed(2)),
+        start,
         stylePreset: activeStylePreset,
       });
       await applyMotionToTarget(selectedTarget, compiled, "check");
@@ -464,6 +545,8 @@ export function MotionLibraryPanel({ recordEdit }: MotionLibraryPanelProps) {
     [
       findSceneTransitionTarget,
       selectedTarget,
+      addressableTargets,
+      placementMode,
       activeStylePreset,
       currentTime,
       applyMotionToTarget,
@@ -854,15 +937,54 @@ export function MotionLibraryPanel({ recordEdit }: MotionLibraryPanelProps) {
       <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-neutral-800">
         {/* Preset Gallery Grid */}
         <div className="p-3 flex-1 min-h-[300px] overflow-y-auto">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
-              Preset Gallery ({filteredPresets.length})
-            </span>
-            <span className="text-[10px] text-neutral-400">
-              {selectedTarget
-                ? `Target: #${selectedTarget.id || selectedTarget.selector}`
-                : "No element selected"}
-            </span>
+          <div className="mb-2 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
+                Preset Gallery ({filteredPresets.length})
+              </span>
+              <span className="text-[10px] font-mono text-amber-300/90">
+                {selectedTarget
+                  ? `Target: #${selectedTarget.id || selectedTarget.selector}`
+                  : "No element selected"}
+              </span>
+            </div>
+            {/* AI Agent & Quick Target / Placement Selector Bar */}
+            <div className="grid grid-cols-2 gap-1.5 rounded border border-neutral-800 bg-neutral-900/60 p-1.5">
+              <label className="flex flex-col gap-0.5 text-[9px] text-neutral-400">
+                <span>Target Layer</span>
+                <select
+                  data-testid="motion-target-select"
+                  value={manualTargetId || selectedTarget?.id || ""}
+                  onChange={(e) => setManualTargetId(e.currentTarget.value)}
+                  className="rounded border border-neutral-700 bg-neutral-950 px-1.5 py-1 text-[10px] text-neutral-100 focus:border-amber-400 focus:outline-none"
+                >
+                  <option value="">
+                    {selectedTarget?.id
+                      ? `Selected (#${selectedTarget.id})`
+                      : "Select target layer..."}
+                  </option>
+                  {addressableTargets.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label} (#{t.id})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5 text-[9px] text-neutral-400">
+                <span>Click Placement</span>
+                <select
+                  data-testid="motion-placement-select"
+                  value={placementMode}
+                  onChange={(e) => setPlacementMode(e.currentTarget.value as MotionPlacementMode)}
+                  className="rounded border border-neutral-700 bg-neutral-950 px-1.5 py-1 text-[10px] text-neutral-100 focus:border-amber-400 focus:outline-none"
+                >
+                  <option value="playhead">At Playhead ({currentTime.toFixed(1)}s)</option>
+                  <option value="auto">Smart Auto (In/Mid/Out)</option>
+                  <option value="start">Layer Start</option>
+                  <option value="end">Layer End</option>
+                </select>
+              </label>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2 pr-1">
             {filteredPresets.map((preset) => (

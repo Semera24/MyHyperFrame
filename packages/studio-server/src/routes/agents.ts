@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StudioApiAdapter } from "../types.js";
-import { executeFastPatch, isFastPatchEligible } from "../helpers/fastPatcher.js";
+import { executeFastPatch } from "../helpers/fastPatcher.js";
 import { loadEpisodeBrainContext, formatEpisodeBrainPrompt } from "../helpers/episodeBrain.js";
 
 export type AgentEngineId = "claude" | "codex" | "agy" | "grok" | "opencode";
@@ -585,6 +585,12 @@ function buildCompiledPrompt(opts: {
     "- Edit the HTML/CSS/GSAP files directly in-place inside the Authoritative Sources Directory.",
     "- Preserve deterministic `data-hf-id`, `data-start`, and `data-duration` attributes on all elements.",
     "- Keep scene compositions (`compositions/sXX.html`) and `index.html` durations frame-aligned at 30fps.",
+    '- Add `class="clip"` to timed elements (`[data-start][data-duration]`) so Studio and the linter recognize them as clips.',
+    "",
+    "## Motion Effects & Scene Transitions (AI Agent Quick Reference)",
+    '- **Declarative Scene Transitions (`index.html`)**: Add `data-transition="crossfade|push|wipe|reveal|split|zoom|morph"` and optional `data-transition-duration="0.6"` on the incoming `<div data-composition-id="sXX">` element, or persist to `.hyperframes/studio-motion.json`.',
+    '- **Declarative Object Motion Effects (`compositions/sXX.html`)**: Add `data-motion-in="rise-up|fade-in|appear|fly-in|pop|wipe-in|blur-in"`, `data-motion-emphasis="pulse|glow|spotlight|float|zoom-hold"`, `data-motion-out="fade-out|slide-out|shrink-out|wipe-out"`, or `data-motion-path="line|arc|curve|turn"` on any element with an `id`.',
+    "- **Browser / DevTools Agent SDK**: Call `await window.__hyperframesAgent.applySceneTransition({ presetId: 'crossfade', toSceneId: 's02', duration: 0.6 })` or `await window.__hyperframesAgent.applyObjectEffect({ targetId: 's01-evidence-card', presetId: 'rise-up', placement: 'auto' })`.",
     "",
     "## User Request",
     opts.prompt.trim(),

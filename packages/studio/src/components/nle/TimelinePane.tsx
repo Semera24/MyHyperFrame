@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { Timeline } from "../../player";
 import type { TimelineElement, TimelineTimeRange } from "../../player";
 import type { TimelineProps } from "../../player/components/TimelineTypes";
 import type { BlockedTimelineEditIntent } from "../../player/components/timelineEditing";
 import { AudioMeterStrip } from "./AudioMeterStrip";
+import { TimelineQuickToolsMenu } from "./TimelineQuickToolsMenu";
 import { useTimelineEditContext } from "../../contexts/TimelineEditContext";
 import { useNLEContext } from "./NLEContext";
 
@@ -99,7 +100,13 @@ export function TimelinePane({
           }
         }}
       >
-        <div className="shrink-0 relative z-40">{timelineToolbar}</div>
+        <div className="shrink-0 relative z-40">
+          {isValidElement<{ rightActions?: ReactNode }>(timelineToolbar)
+            ? cloneElement(timelineToolbar as ReactElement<{ rightActions?: ReactNode }>, {
+                rightActions: <TimelineQuickToolsMenu onDeleteElement={onDeleteElement} />,
+              })
+            : timelineToolbar}
+        </div>
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="min-w-0 flex-1">
             <Timeline

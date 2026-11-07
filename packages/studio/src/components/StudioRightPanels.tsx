@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect } from "react";
 import type { StudioRightPanelsProps } from "./StudioRightPanels.types";
 
 import { PropertyPanel } from "./editor/PropertyPanel";
@@ -12,6 +12,13 @@ import { MotionBlurPanel } from "./panels/MotionBlurPanel";
 import { AgentAssistantPanel } from "./panels/AgentAssistantPanel";
 import { EpisodeHandoffPanel } from "./panels/EpisodeHandoffPanel";
 import { MotionInspector } from "./panels/MotionInspector";
+import { ProjectSettingsInspector } from "./panels/ProjectSettingsInspector";
+import { RightInspectorHeader } from "./panels/RightInspectorHeader";
+import { InspectorLayerActions } from "./editor/InspectorLayerActions";
+import {
+  installHyperFramesAgentBridge,
+  syncDeclarativeDomMotions,
+} from "./editor/studioMotionAgent";
 import { useStudioMotionStore } from "./editor/useStudioMotionStore";
 import { Dock } from "./dock/Dock";
 import { useDockLayoutStore } from "./dock/dockLayoutStore";
@@ -61,6 +68,7 @@ export const StudioRightPanels = memo(function StudioRightPanels({
     domEditGroupSelections,
     copiedAgentPrompt,
     clearDomSelection,
+    handleDomEditElementDelete,
     handleUngroupSelection,
     handleGroupSelection,
     handleDomStyleCommit,
@@ -270,9 +278,176 @@ export const StudioRightPanels = memo(function StudioRightPanels({
     </DesignPanelPromoteProvider>
   );
 
-  const { selectedMotionId, setSelectedMotionId } = useStudioMotionStore();
+  const { selectedMotionId, setSelectedMotionId, commitManifest } = useStudioMotionStore();
 
-  let designBody = propertyPanel;
+  useEffect(() => {
+    return installHyperFramesAgentBridge({
+      getManifest: () => useStudioMotionStore.getState().manifest,
+      getActiveStylePreset: () => useStudioMotionStore.getState().activeStylePreset,
+      getActiveCompPath: () => activeCompPath,
+      getCurrentTime: () => usePlayerStore.getState().currentTime,
+      getIframeDoc: () => previewIframeRef.current?.contentDocument ?? null,
+      getTimelineElements: () => usePlayerStore.getState().elements,
+      commitManifest: async (nextManifest, label) => {
+        await commitManifest(nextManifest, label, {
+          writeProjectFile,
+          recordEdit,
+          iframeDoc: previewIframeRef.current?.contentDocument ?? null,
+          activeCompPath,
+          currentTime: usePlayerStore.getState().currentTime,
+        });
+      },
+      setSelectedMotionId,
+      requestSeek: (t) => usePlayerStore.getState().requestSeek(t),
+    });
+  }, [
+    activeCompPath,
+    commitManifest,
+    previewIframeRef,
+    recordEdit,
+    setSelectedMotionId,
+    writeProjectFile,
+  ]);
+
+  // Auto-sync declarative HTML motion/transition attributes (data-transition, data-motion-in/out/emphasis/path)
+  useEffect(() => {
+    const doc = previewIframeRef.current?.contentDocument ?? null;
+    if (!doc) return;
+    const state = useStudioMotionStore.getState();
+    const { manifest: synced, addedCount } = syncDeclarativeDomMotions(
+      doc,
+      activeCompPath,
+      state.manifest,
+      state.activeStylePreset,
+    );
+    if (addedCount > 0) {
+      state.setManifestLive(synced, doc, activeCompPath, usePlayerStore.getState().currentTime);
+    }
+  }, [activeCompPath, previewIframeRef, refreshKey]);
+  const selectedTimelineElement = usePlayerStore((s) =>
+    s.elements.find((el) => {
+      const key = el.key ?? el.id;
+      return s.selectedElementIds instanceof Set
+        ? s.selectedElementIds.has(key) || s.selectedElementIds.has(el.id)
+        : Array.isArray(s.selectedElementIds) &&
+            ((s.selectedElementIds as string[]).includes(key) ||
+              (s.selectedElementIds as string[]).includes(el.id));
+    }),
+  );
+
+  const hasSingleSelection =
+    (Boolean(domEditSelection) || Boolean(selectedTimelineElement)) &&
+    domEditGroupSelections.length <= 1;
+
+  const handleDeleteCurrentSelection = useCallback(() => {
+    if (domEditSelection) {
+      void handleDomEditElementDelete(domEditSelection);
+    } else if (selectedTimelineElement) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
+    }
+  }, [domEditSelection, handleDomEditElementDelete, selectedTimelineElement]);
+
+  const handleToggleCurrentHidden = useCallback(
+    (nextHidden: boolean) => {
+      if (selectedTimelineElement && onToggleElementHidden) {
+        void onToggleElementHidden(
+          [selectedTimelineElement.key ?? selectedTimelineElement.id],
+          nextHidden,
+        );
+        return;
+      }
+      if (domEditSelection) {
+        const { elements } = usePlayerStore.getState();
+        const keys = timelineKeysForSelections([domEditSelection], elements, activeCompPath);
+        if (keys.length > 0 && onToggleElementHidden) {
+          void onToggleElementHidden(keys, nextHidden);
+          return;
+        }
+      }
+      void handleDomAttributeQuietCommit("hidden", nextHidden ? "" : null);
+    },
+    [
+      activeCompPath,
+      domEditSelection,
+      handleDomAttributeQuietCommit,
+      onToggleElementHidden,
+      selectedTimelineElement,
+    ],
+  );
+
+  let designBody = (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {hasSingleSelection && (
+        <InspectorLayerActions
+          selection={domEditSelection}
+          timelineElement={selectedTimelineElement}
+          gsapAnimations={selectedGsapAnimations}
+          onDeleteLayer={handleDeleteCurrentSelection}
+          onDeleteScene={handleDeleteCurrentSelection}
+          onToggleHidden={handleToggleCurrentHidden}
+        />
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {domEditSelection || domEditGroupSelections.length > 1 || !selectedTimelineElement ? (
+          propertyPanel
+        ) : (
+          <div
+            data-testid="inspector-timeline-clip-properties"
+            className="flex flex-col gap-3 p-3.5 text-xs text-neutral-200"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              {selectedTimelineElement.type === "scene" ||
+              Boolean(selectedTimelineElement.compositionSrc)
+                ? "Scene Clip Properties"
+                : "Layer Clip Properties"}
+            </div>
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+              <div>
+                <div className="text-[10px] text-neutral-500">Clip ID</div>
+                <div className="font-mono text-xs text-neutral-100">
+                  #{selectedTimelineElement.domId || selectedTimelineElement.id}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-neutral-500">Track</div>
+                <div className="font-mono text-xs text-neutral-100">
+                  Track {(selectedTimelineElement.track ?? 0) + 1}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-neutral-500">Start Time</div>
+                <div className="font-mono text-xs text-neutral-100">
+                  {selectedTimelineElement.start.toFixed(2)}s
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-neutral-500">Duration</div>
+                <div className="font-mono text-xs text-neutral-100">
+                  {selectedTimelineElement.duration.toFixed(2)}s
+                </div>
+              </div>
+              {selectedTimelineElement.textContent && (
+                <div className="col-span-2">
+                  <div className="text-[10px] text-neutral-500">Text Content</div>
+                  <div className="text-xs font-medium text-neutral-100 truncate">
+                    {selectedTimelineElement.textContent}
+                  </div>
+                </div>
+              )}
+              <div className="col-span-2">
+                <div className="text-[10px] text-neutral-500">Composition Source</div>
+                <div className="font-mono text-[11px] text-emerald-300 truncate">
+                  {selectedTimelineElement.compositionSrc ||
+                    selectedTimelineElement.sourceFile ||
+                    "index.html"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
   if (selectedMotionId) {
     designBody = <MotionInspector onClose={() => setSelectedMotionId(null)} />;
   } else if (captionEditMode) {
@@ -287,58 +462,91 @@ export const StudioRightPanels = memo(function StudioRightPanels({
         onClose={onCloseBlockParams ?? (() => {})}
       />
     );
-  } else if (!domEditSelection && domEditGroupSelections.length === 0) {
+  } else if (!domEditSelection && !selectedTimelineElement && domEditGroupSelections.length === 0) {
     designBody = (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-hidden border-b border-panel-border">
-          <LayersPanel />
-        </div>
-        <div className="max-h-[180px] shrink-0 overflow-y-auto">{propertyPanel}</div>
-      </div>
+      <ProjectSettingsInspector
+        projectId={projectId}
+        projectDir={projectDir}
+        activeCompPath={activeCompPath}
+        onOpenAssistant={() => useDockLayoutStore.getState().activatePanel("assistant")}
+      />
     );
   }
 
   return (
     <>
       <Dock.Panel id="design" title={selectedMotionId ? "Motion Inspector" : "Inspector"}>
-        {designBody}
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RightInspectorHeader activePanelId="design" renderCount={renderJobs.length} />
+          <div className="min-h-0 flex-1 overflow-hidden">{designBody}</div>
+        </div>
       </Dock.Panel>
       <Dock.Panel id="layers">
-        <LayersPanel />
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RightInspectorHeader activePanelId="layers" renderCount={renderJobs.length} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <LayersPanel />
+          </div>
+        </div>
       </Dock.Panel>
       <Dock.Panel id="assistant" title="🤖 Assistant">
-        <AgentAssistantPanel
-          projectId={projectId}
-          activeCompPath={activeCompPath}
-          selectedElementId={domEditSelection?.id || domEditSelection?.hfId || null}
-          reloadPreview={reloadPreview}
-          refreshFileTree={refreshFileTree}
-        />
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RightInspectorHeader activePanelId="assistant" renderCount={renderJobs.length} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <AgentAssistantPanel
+              projectId={projectId}
+              activeCompPath={activeCompPath}
+              selectedElementId={domEditSelection?.id || domEditSelection?.hfId || null}
+              reloadPreview={reloadPreview}
+              refreshFileTree={refreshFileTree}
+            />
+          </div>
+        </div>
       </Dock.Panel>
       <Dock.Panel id="handoff" title="📋 Handoff">
-        <EpisodeHandoffPanel projectId={projectId} />
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RightInspectorHeader activePanelId="handoff" renderCount={renderJobs.length} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <EpisodeHandoffPanel projectId={projectId} />
+          </div>
+        </div>
       </Dock.Panel>
       <Dock.Panel
         id="renders"
         title={renderJobs.length > 0 ? `Renders (${renderJobs.length})` : undefined}
       >
-        <RenderQueuePanel />
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RightInspectorHeader activePanelId="renders" renderCount={renderJobs.length} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <RenderQueuePanel />
+          </div>
+        </div>
       </Dock.Panel>
       <Dock.Panel id="variables">
-        <VariablesPanel
-          sdkSession={sdkSession}
-          publishSdkSession={publishSdkSession}
-          reloadPreview={reloadPreview}
-          recordEdit={recordEdit}
-        />
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RightInspectorHeader activePanelId="variables" renderCount={renderJobs.length} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <VariablesPanel
+              sdkSession={sdkSession}
+              publishSdkSession={publishSdkSession}
+              reloadPreview={reloadPreview}
+              recordEdit={recordEdit}
+            />
+          </div>
+        </div>
       </Dock.Panel>
       <Dock.Panel id="motionBlur">
-        <MotionBlurPanel
-          sdkSession={sdkSession}
-          publishSdkSession={publishSdkSession}
-          reloadPreview={reloadPreview}
-          recordEdit={recordEdit}
-        />
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RightInspectorHeader activePanelId="motionBlur" renderCount={renderJobs.length} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <MotionBlurPanel
+              sdkSession={sdkSession}
+              publishSdkSession={publishSdkSession}
+              reloadPreview={reloadPreview}
+              recordEdit={recordEdit}
+            />
+          </div>
+        </div>
       </Dock.Panel>
       <Dock.Panel id="slideshow">
         <SlideshowPanel

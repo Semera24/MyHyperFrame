@@ -2,17 +2,15 @@ import { memo, useCallback, useContext, useEffect, useRef, useState, type MouseE
 import { Camera, ChevronDown } from "../icons/SystemIcons";
 import { useStudioShellContext } from "../contexts/StudioContext";
 import { usePanelLayoutContext } from "../contexts/PanelLayoutContext";
-import { usePlayerStore } from "../player";
-import { buildProjectApiPath } from "../utils/projectRouting";
+import { navigateToProject } from "../utils/projectRouting";
 import { studioApiFetch } from "../utils/studioApiFetch";
 import { trackStudioEvent } from "../utils/studioTelemetry";
 import { Button, buttonBase, buttonSizes, buttonVariants, cn, Tooltip } from "./ui";
 import { Dock } from "./dock/Dock";
+import { useDockLayoutStore } from "./dock/dockLayoutStore";
 import { InspectorIcon } from "./icons/InspectorIcon";
-import { OpenInDesktopButton } from "./OpenInDesktopButton";
 import { HyperframesLogo } from "./ui/HyperframesLogo";
 import { ShowThemeToggle, ThemeToggle } from "./ThemeToggle";
-import { TemplatesModal } from "./templates/TemplatesModal";
 import { CreateEpisodeModal } from "./projects/CreateEpisodeModal";
 
 interface StudioHeaderProps {
@@ -57,11 +55,6 @@ export const StudioHeader = memo(function StudioHeader({
   const activeCompPath = shell.activeCompPath;
   const { rightCollapsed, setRightCollapsed, rightPanelTab, setRightPanelTab } =
     usePanelLayoutContext();
-  const duration = usePlayerStore((s) => s.duration);
-  const [projectMeta, setProjectMeta] = useState<{
-    realDir?: string;
-    isAuthoritative?: boolean;
-  } | null>(null);
   const [episodesOpen, setEpisodesOpen] = useState(false);
   const [episodesList, setEpisodesList] = useState<
     Array<{
@@ -74,9 +67,6 @@ export const StudioHeader = memo(function StudioHeader({
       hasDraftRender?: boolean;
     }>
   >([]);
-  const [exportingToEpisode, setExportingToEpisode] = useState(false);
-  const [exportedDraftStatus, setExportedDraftStatus] = useState<string | null>(null);
-  const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
   const [createEpisodeModalOpen, setCreateEpisodeModalOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   const isRendering = renderQueue.isRendering;
@@ -119,75 +109,9 @@ export const StudioHeader = memo(function StudioHeader({
     };
   }, [episodesOpen]);
 
-  const handleExportToEpisodeRenders = useCallback(async () => {
-    if (!projectId || exportingToEpisode) return;
-    setExportingToEpisode(true);
-    setExportedDraftStatus(null);
-    try {
-      const res = await studioApiFetch(
-        buildProjectApiPath(projectId, "/renders/export-to-episode"),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-      if (res && res.ok) {
-        const data = (await res.json()) as { relativeDraftPath?: string };
-        setExportedDraftStatus(data.relativeDraftPath || `Renders/${projectId}_Draft.mp4`);
-        fetchProjectsList();
-        setTimeout(() => setExportedDraftStatus(null), 5000);
-      } else {
-        // No completed render yet — open Renders panel and start Export (which auto-copies on completion)
-        setRightPanelTab("renders");
-        setRightCollapsed(false);
-        if (!ffmpegMissing && !isRendering) {
-          onExport?.();
-        }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setExportingToEpisode(false);
-    }
-  }, [
-    projectId,
-    exportingToEpisode,
-    fetchProjectsList,
-    setRightPanelTab,
-    setRightCollapsed,
-    ffmpegMissing,
-    isRendering,
-    onExport,
-  ]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    let cancelled = false;
-    try {
-      studioApiFetch(buildProjectApiPath(projectId, ""))
-        .then((res) => (res && res.ok ? res.json() : null))
-        .then((data: { realDir?: string; isAuthoritative?: boolean } | null) => {
-          if (cancelled || !data) return;
-          setProjectMeta({
-            realDir: data.realDir,
-            isAuthoritative: data.isAuthoritative,
-          });
-        })
-        .catch(() => {});
-    } catch {
-      // Ignore in test environments without fetch
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  const totalFrames = duration > 0 ? Math.round(duration * 30) : 0;
-
   return (
     <div className="flex items-center justify-between h-10 px-3 bg-surface border-b border-border-strong shrink-0">
-      {/* Left: logo + project name + episode context badges */}
+      {/* Left: logo + project name & switcher + active scene breadcrumb */}
       <div className="flex items-center gap-2.5 min-w-0">
         <HyperframesLogo />
         <span className="text-text-5 select-none" aria-hidden="true">
@@ -201,8 +125,8 @@ export const StudioHeader = memo(function StudioHeader({
               if (!episodesOpen) fetchProjectsList();
               setEpisodesOpen((prev) => !prev);
             }}
-            className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-bg-2 border border-transparent hover:border-border-strong transition-colors text-step-11 font-semibold text-text-1 max-w-[280px]"
-            title="Click to switch between ProductionStudio episodes"
+            className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-bg-2 border border-transparent hover:border-border-strong transition-colors text-step-11 font-semibold text-text-1 max-w-[300px]"
+            title="Switch project or create a new episode"
           >
             <span className="truncate">{projectId}</span>
             <ChevronDown size={11} className="text-text-3 shrink-0" />
@@ -237,7 +161,7 @@ export const StudioHeader = memo(function StudioHeader({
                         onClick={() => {
                           setEpisodesOpen(false);
                           if (ep.id !== projectId) {
-                            window.location.assign(`/?project=${encodeURIComponent(ep.id)}`);
+                            navigateToProject(ep.id);
                           }
                         }}
                         className={cn(
@@ -287,7 +211,7 @@ export const StudioHeader = memo(function StudioHeader({
                           onClick={() => {
                             setEpisodesOpen(false);
                             if (ep.id !== projectId) {
-                              window.location.assign(`/?project=${encodeURIComponent(ep.id)}`);
+                              navigateToProject(ep.id);
                             }
                           }}
                           className={cn(
@@ -340,43 +264,11 @@ export const StudioHeader = memo(function StudioHeader({
             </button>
           </div>
         )}
-        <span
-          className="px-1.5 py-0.5 rounded bg-bg-2 border border-border-strong font-mono text-[10px] text-text-2"
-          title="Active composition file"
-        >
-          {activeCompPath || "index.html"}
-        </span>
-        {duration > 0 && (
-          <span
-            className="px-1.5 py-0.5 rounded bg-bg-2 border border-border-strong font-mono text-[10px] tabular-nums text-text-2"
-            title="Authoritative composition duration and 30fps frame count"
-          >
-            {duration.toFixed(2)}s · {totalFrames.toLocaleString()}f
-          </span>
-        )}
-        {projectMeta?.realDir && (
-          <Tooltip label={`Workspace: ${projectMeta.realDir}`} side="bottom">
-            <span
-              className={cn(
-                "px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold uppercase tracking-wide border select-none",
-                projectMeta.isAuthoritative
-                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                  : "bg-amber-500/15 text-amber-300 border-amber-500/30",
-              )}
-            >
-              {projectMeta.isAuthoritative ? "AUTHORITATIVE" : "NON-AUTH"}
-            </span>
-          </Tooltip>
-        )}
       </div>
-      {/* Right: toolbar buttons */}
-      <div className="flex items-center gap-3">
+      {/* Right: essential project controls + Export */}
+      <div className="flex items-center gap-2">
         <div className="flex h-ctl items-center divide-x divide-border-strong overflow-hidden rounded-md border border-border-strong bg-bg-2">
           <Tooltip label={capturing ? "Capturing frame…" : "Capture current frame"} side="bottom">
-            {/* A real download link, so it wears Button's recipe rather than being
-              one: `download` on an <a> is what saves the frame, and no <button>
-              can do that. `enabled:` never matches a link, so the ghost
-              variant's hover look is repeated unprefixed here. */}
             <a
               href={captureFrameHref}
               download={captureFrameFilename}
@@ -395,7 +287,7 @@ export const StudioHeader = memo(function StudioHeader({
                 buttonBase,
                 buttonVariants.ghost,
                 buttonSizes.md,
-                "h-full rounded-none max-[1000px]:px-2",
+                "h-full rounded-none px-3 max-[1000px]:px-2",
                 capturing
                   ? "text-text-4 cursor-default"
                   : "hover:bg-hover hover:text-text-0 active:scale-[0.98]",
@@ -426,10 +318,12 @@ export const StudioHeader = memo(function StudioHeader({
               ) : (
                 <Camera size={14} />
               )}
-              <span className="max-[1000px]:hidden">{capturing ? "Capturing…" : "Capture"}</span>
+              <span className="sr-only max-[1000px]:hidden">
+                {capturing ? "Capturing…" : "Capture"}
+              </span>
             </a>
           </Tooltip>
-          <Tooltip label="Inspector" side="bottom">
+          <Tooltip label="Toggle Right Inspector" side="bottom">
             <Button
               variant="ghost"
               aria-label="Inspector"
@@ -448,17 +342,16 @@ export const StudioHeader = memo(function StudioHeader({
                   return;
                 }
                 trackStudioEvent("panel_toggle", { panel: "inspector", collapsed: true });
-                // Keep the current selection when collapsing the Inspector — closing
-                // the panel shouldn't deselect the element.
                 setRightCollapsed(true);
               }}
             >
               Inspector
             </Button>
           </Tooltip>
-          <Tooltip label="AI Agent & 22 Skills Assistant" side="bottom">
+          <Tooltip label="Toggle AI Assistant Panel" side="bottom">
             <Button
               variant="ghost"
+              data-testid="header-assistant-toggle"
               aria-label="Assistant"
               aria-pressed={!rightCollapsed && rightPanelTab === "assistant"}
               className={cn(
@@ -468,55 +361,34 @@ export const StudioHeader = memo(function StudioHeader({
                   "bg-on text-accent-ink enabled:hover:bg-on-hover enabled:hover:text-accent-ink",
               )}
               onClick={() => {
+                if (!rightCollapsed && rightPanelTab === "assistant") {
+                  setRightPanelTab("design");
+                  useDockLayoutStore.getState().closePanel("assistant");
+                  return;
+                }
                 setRightPanelTab("assistant");
                 setRightCollapsed(false);
               }}
             >
-              🤖 Assistant
-            </Button>
-          </Tooltip>
-          <Tooltip
-            label="3 Master Video Templates (Hero Split, Map Route, Archival Ledger)"
-            side="bottom"
-          >
-            <Button
-              variant="ghost"
-              data-testid="header-templates-button"
-              aria-label="Master Templates"
-              onClick={() => setTemplatesModalOpen(true)}
-              className="h-full rounded-none text-amber-300 font-semibold hover:text-amber-200"
-            >
-              📋 Templates
+              Assistant
             </Button>
           </Tooltip>
         </div>
-        {showThemeToggle && <ThemeToggle />}
-        <Dock.WindowMenu />
-        <OpenInDesktopButton />
-        <Tooltip
-          label={
-            exportedDraftStatus
-              ? `Copied to ${exportedDraftStatus}! episode-status.py & quick-qc.py are updated.`
-              : `1-Click copy latest MP4 to Episodes/${projectId}/Renders/${projectId}_Draft.mp4`
-          }
-          side="bottom"
-        >
+        <Tooltip label="Reset workspace panels to default layout" side="bottom">
           <Button
-            variant="secondary"
-            data-testid="header-export-episode-renders"
-            disabled={exportingToEpisode}
-            onClick={() => void handleExportToEpisodeRenders()}
-            className={cn(
-              exportedDraftStatus && "border-emerald-500/50 bg-emerald-500/15 text-emerald-300",
-            )}
+            variant="ghost"
+            data-testid="header-reset-layout"
+            aria-label="Reset Layout"
+            onClick={() => {
+              useDockLayoutStore.getState().resetLayout();
+              setRightCollapsed(false);
+            }}
           >
-            {exportingToEpisode
-              ? "Copying…"
-              : exportedDraftStatus
-                ? "✓ In Renders/"
-                : "→ Episode Renders/"}
+            Reset Layout
           </Button>
         </Tooltip>
+        <Dock.WindowMenu />
+        {showThemeToggle && <ThemeToggle />}
         <Tooltip
           label={
             ffmpegMissing
@@ -535,11 +407,6 @@ export const StudioHeader = memo(function StudioHeader({
               if (isRendering) return;
               setRightPanelTab("renders");
               setRightCollapsed(false);
-              // Without an encoder this render cannot finish, so the click
-              // delivers the user to the prompt that fixes it instead of
-              // queueing a job that exists only to fail. Disabling the button
-              // would leave them staring at a dead control with no route to
-              // the explanation.
               if (ffmpegMissing) return;
               onExport?.();
             }}
@@ -548,16 +415,6 @@ export const StudioHeader = memo(function StudioHeader({
           </Button>
         </Tooltip>
       </div>
-
-      {/* 3 Master Templates Cloner Modal */}
-      <TemplatesModal
-        projectId={projectId}
-        isOpen={templatesModalOpen}
-        onClose={() => setTemplatesModalOpen(false)}
-        onSceneCreated={() => {
-          shell.reloadPreview();
-        }}
-      />
 
       {/* New Episode Scaffold Modal */}
       <CreateEpisodeModal

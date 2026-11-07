@@ -88,8 +88,9 @@ function toPersistedSelection(
 
 function replaceHash(nextHash: string) {
   if (typeof window === "undefined") return;
-  if (window.location.hash === nextHash) return;
-  window.history.replaceState(null, "", nextHash);
+  const hasProjectSearch = window.location.search.includes("project=");
+  if (window.location.hash === nextHash && !hasProjectSearch) return;
+  window.history.replaceState(null, "", `${window.location.pathname || "/"}${nextHash}`);
 }
 
 interface ResolveUrlSelectionsParams {

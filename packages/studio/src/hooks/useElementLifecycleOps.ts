@@ -194,8 +194,31 @@ export function useElementLifecycleOps({
           return domEditCommitDeclined("preview-stale");
         }
 
+        for (const member of sameFile) {
+          try {
+            member.element?.remove?.();
+          } catch {
+            // ignore detached node
+          }
+        }
+        const deletedIds = new Set(
+          sameFile.flatMap((m) => [m.id, m.hfId].filter((v): v is string => Boolean(v))),
+        );
+        if (deletedIds.size > 0) {
+          const store = usePlayerStore.getState();
+          const nextElements = store.elements.filter(
+            (te) =>
+              !deletedIds.has(te.id) &&
+              !(te.domId && deletedIds.has(te.domId)) &&
+              !(te.hfId && deletedIds.has(te.hfId)),
+          );
+          if (nextElements.length !== store.elements.length) {
+            store.setElements(nextElements);
+          }
+        }
         clearDomSelection();
         usePlayerStore.getState().setSelectedElementId(null);
+        usePlayerStore.getState().setSelectedElementIds(new Set());
         // Server wrote the file; resync the stale in-memory SDK doc so a later
         // SDK edit doesn't resurrect the deleted element.
         forceReloadSdkSession?.();

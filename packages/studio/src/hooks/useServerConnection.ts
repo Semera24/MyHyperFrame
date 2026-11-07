@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { buildProjectHash, parseProjectIdFromHash } from "../utils/projectRouting";
+import {
+  buildProjectHash,
+  parseProjectHashRoute,
+  parseProjectIdFromHash,
+  parseProjectIdFromSearch,
+} from "../utils/projectRouting";
 import { useMountEffect } from "./useMountEffect";
 import { trackStudioEvent } from "../utils/studioTelemetry";
 import { studioApiFetch } from "../utils/studioApiFetch";
@@ -60,8 +65,10 @@ async function resolveHashProject(id: string): Promise<ProjectHashVerdict> {
  * whole fallback and push again, leaving a trail of dead ids the user cannot
  * escape with the Back button.
  */
-function replaceProjectHash(projectId: string): void {
-  window.history.replaceState(null, "", buildProjectHash(projectId));
+function replaceProjectHash(projectId: string, params?: URLSearchParams): void {
+  const nextHash = buildProjectHash(projectId, params);
+  const nextUrl = `${window.location.pathname || "/"}${nextHash}`;
+  window.history.replaceState(null, "", nextUrl);
 }
 
 /**
@@ -95,7 +102,10 @@ export function useServerConnection(): ServerConnectionState {
   const [waitingForServer, setWaitingForServer] = useState(false);
 
   useMountEffect(() => {
-    const hashProjectId = parseProjectIdFromHash(window.location.hash);
+    const hashRoute = parseProjectHashRoute(window.location.hash);
+    const hashProjectId = hashRoute?.projectId ?? null;
+    const searchProjectId = parseProjectIdFromSearch(window.location.search);
+    const requestedProjectId = hashProjectId ?? searchProjectId;
     let cancelled = false;
     // Explicitly `number` (the DOM return of window.setTimeout) rather than
     // ReturnType<typeof window.setTimeout> — with @types/node present, that infers
@@ -112,21 +122,18 @@ export function useServerConnection(): ServerConnectionState {
         .then((r) => r.json())
         .then(async (data) => {
           if (cancelled) return;
-          // A hash project id outlives the project it names — a renamed folder,
-          // or a bookmark from a project that is gone. Trusting it blindly made
-          // every later /api/projects/<id>/... request 404 for the life of the
-          // tab, including the composition read that opens the SDK session, so
-          // every edit fell back to the server path with nothing to show why.
-          // Telemetry after the read-reason split: 120 http_error/404 reads
-          // across 5 users in 24h, ~24 each, never recovering.
-          if (hashProjectId) {
-            const verdict = await resolveHashProject(hashProjectId);
+          if (requestedProjectId) {
+            const verdict = await resolveHashProject(requestedProjectId);
             if (cancelled) return;
             reportHashVerdict("mount", verdict);
-            // "unknown" keeps the old behaviour: a transient failure must not
-            // rewrite the user's hash out from under a valid project.
             if (verdict.outcome !== "missing") {
-              setProjectId(hashProjectId);
+              if (searchProjectId !== null || !hashProjectId) {
+                replaceProjectHash(
+                  requestedProjectId,
+                  hashProjectId === requestedProjectId ? hashRoute?.params : undefined,
+                );
+              }
+              setProjectId(requestedProjectId);
               setWaitingForServer(false);
               return;
             }
@@ -158,21 +165,17 @@ export function useServerConnection(): ServerConnectionState {
   // eslint-disable-next-line no-restricted-syntax
   useEffect(() => {
     const onHashChange = () => {
-      const next = parseProjectIdFromHash(window.location.hash);
+      const route = parseProjectHashRoute(window.location.hash);
+      const next = route?.projectId ?? null;
       if (!next || next === projectId) return;
-      // Validated, not adopted. The mount path has checked its hash since
-      // v0.8.52; this path took any id the URL offered, so changing projects
-      // re-armed the same dead-tab failure the mount check exists to prevent.
       void (async () => {
         const verdict = await resolveHashProject(next);
-        // Ground truth, not a captured flag. This effect re-registers on every
-        // projectId change, so a generation counter in this closure would reset
-        // and an in-flight verdict from the previous registration would read as
-        // current — adopting a project the user has already navigated away from.
-        // The hash itself cannot go stale.
         if (parseProjectIdFromHash(window.location.hash) !== next) return;
         reportHashVerdict("hashchange", verdict);
         if (verdict.outcome !== "missing") {
+          if (parseProjectIdFromSearch(window.location.search) !== null) {
+            replaceProjectHash(next, route?.params);
+          }
           setProjectId(next);
           return;
         }

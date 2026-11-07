@@ -1,5 +1,5 @@
 import type { HistoryTarget } from "@hyperframes/studio-server";
-import { buildProjectApiPath } from "./projectRouting";
+import { assertProjectUrlAgreement, buildProjectApiPath } from "./projectRouting";
 import type { MutableRefObject } from "react";
 import { serializeStudioFileMutations } from "./studioFileMutationCoordinator";
 import { createStudioSaveHttpError } from "./studioSaveDiagnostics";
@@ -71,6 +71,7 @@ export async function readProjectFileContent(pid: string, path: string): Promise
 export async function saveProjectFilesWithHistory(
   input: SaveProjectFilesWithHistoryInput,
 ): Promise<string[]> {
+  assertProjectUrlAgreement(input.projectId);
   return serializeStudioFileMutations(input.writeFile, Object.keys(input.files), () =>
     writeProjectFilesWithHistoryInQueue(input),
   );
@@ -91,6 +92,7 @@ export async function saveServerRewriteWithHistory(input: {
   rewrite: (original: string) => Promise<{ disk: string; after?: string } | null>;
 }): Promise<boolean> {
   const { projectId, path, writeFile } = input;
+  assertProjectUrlAgreement(projectId);
   return serializeStudioFileMutations(writeFile, [path], async () => {
     const original = await readProjectFileContent(projectId, path);
     const result = await input.rewrite(original);

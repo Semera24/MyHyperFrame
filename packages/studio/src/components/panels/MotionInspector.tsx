@@ -542,10 +542,13 @@ export function MotionInspector({ selectedMotion: propMotion, onClose }: MotionI
         </button>
         <button
           type="button"
+          data-testid={
+            isTransition ? "motion-inspector-remove-transition" : "motion-inspector-remove-effect"
+          }
           onClick={() => void handleRemove()}
           className="flex-1 rounded border border-rose-500/40 bg-rose-500/10 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20"
         >
-          Remove
+          {isTransition ? "Remove Transition" : "Remove Effect"}
         </button>
       </div>
     </div>

@@ -100,14 +100,16 @@ function resolveEpisodeRoot(projectDir: string): string {
   return basename(clean) === "Sources" ? dirname(clean) : clean;
 }
 
-function parsePngHeader(filePath: string): { width: number; height: number; colorType: number; hasAlpha: boolean } | null {
+function parsePngHeader(
+  filePath: string,
+): { width: number; height: number; colorType: number; hasAlpha: boolean } | null {
   try {
     const buf = readFileSync(filePath);
     if (buf.length < 29) return null;
     if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4e || buf[3] !== 0x47) return null;
     const width = buf.readUInt32BE(16);
     const height = buf.readUInt32BE(20);
-    const colorType = buf[25]; // 0=gray, 2=RGB, 3=palette, 4=gray+alpha, 6=RGBA
+    const colorType = buf[25] ?? 6; // 0=gray, 2=RGB, 3=palette, 4=gray+alpha, 6=RGBA
     const hasAlpha = colorType === 4 || colorType === 6 || buf.includes(Buffer.from("tRNS"));
     return { width, height, colorType, hasAlpha };
   } catch {
@@ -122,10 +124,10 @@ function inspectAudioWithFfprobe(audioPath: string): {
   codec: string;
 } | null {
   try {
-    const out = execSync(
-      `ffprobe -v quiet -print_format json -show_streams "${audioPath}"`,
-      { encoding: "utf-8", timeout: 4000 }
-    );
+    const out = execSync(`ffprobe -v quiet -print_format json -show_streams "${audioPath}"`, {
+      encoding: "utf-8",
+      timeout: 4000,
+    });
     const data = JSON.parse(out) as { streams?: Array<Record<string, unknown>> };
     const stream = data.streams?.find((s) => s.codec_type === "audio") || data.streams?.[0];
     if (!stream) return null;
@@ -156,7 +158,7 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
 
     // Channel name detection
     const channelMatch = epRoot.match(/\/ProductionStudio\/channels\/([^/]+)\/episodes\//);
-    const channel = channelMatch ? channelMatch[1] : "Turning_Point_Stories";
+    const channel = channelMatch?.[1] || "Turning_Point_Stories";
 
     const data: EpisodeHandoffData = {
       episodeId,
@@ -193,7 +195,11 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
         const scriptFile = files.find((f) => f.endsWith("_Script.md"));
         if (scriptFile) {
           const content = readFileSync(join(briefDir, scriptFile), "utf-8");
-          const words = content.replace(/[#*`_~-]/g, " ").trim().split(/\s+/).filter(Boolean).length;
+          const words = content
+            .replace(/[#*`_~-]/g, " ")
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean).length;
           const titleMatch = content.match(/^#\s+(.+)$/m);
           const firstPara = content.split("\n\n").slice(0, 3).join("\n").slice(0, 300);
 
@@ -209,7 +215,7 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
             fileName: scriptFile,
             exists: true,
             wordCount: words,
-            title: titleMatch ? titleMatch[1].trim() : scriptFile,
+            title: titleMatch?.[1] ? titleMatch[1].trim() : scriptFile,
             firstLines: firstPara,
             scenes: sceneHeaders,
           };
@@ -418,7 +424,8 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
         const parsedRevisions: RevisionEntry[] = [];
 
         // Parse markdown table rows: | Status | Time | Frame | Scene | Target | Note |
-        const tableRowRegex = /^\|\s*([^|]+)\|\s*([0-9.]+s)?\s*\|\s*([0-9]+f)?\s*\|\s*`?([^`|]+)`?\s*\|\s*`?([^`|]+)`?\s*\|\s*([^|]+)\|/gm;
+        const tableRowRegex =
+          /^\|\s*([^|]+)\|\s*([0-9.]+s)?\s*\|\s*([0-9]+f)?\s*\|\s*`?([^`|]+)`?\s*\|\s*`?([^`|]+)`?\s*\|\s*([^|]+)\|/gm;
         let trm: RegExpExecArray | null;
         while ((trm = tableRowRegex.exec(revContent)) !== null) {
           const rawStatus = trm[1]!.trim().toLowerCase();
@@ -450,7 +457,10 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
         // Also parse section headers (e.g. ## YYYY-MM-DD — Owner Approval: ...)
         const sections = revContent.split(/\n(?=##\s+)/).slice(1);
         for (const sec of sections) {
-          const firstLine = sec.split("\n")[0]!.replace(/^##\s+/, "").trim();
+          const firstLine = sec
+            .split("\n")[0]!
+            .replace(/^##\s+/, "")
+            .trim();
           if (firstLine.includes("Studio Pinned Review Notes")) continue;
 
           let st: RevisionEntry["status"] = "open";
@@ -539,7 +549,9 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
                 ? "image/svg+xml"
                 : "application/octet-stream";
         const bytes = readFileSync(p);
-        return new Response(bytes, { headers: { "Content-Type": mime, "Cache-Control": "no-cache" } });
+        return new Response(bytes, {
+          headers: { "Content-Type": mime, "Cache-Control": "no-cache" },
+        });
       }
     }
     return c.text("Asset not found", 404);
@@ -602,7 +614,9 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
 
     // Inspect audio
     const audioDir = join(epRoot, "Audio");
-    const audioFiles = existsSync(audioDir) ? readdirSync(audioDir).filter((f) => /\.(mp3|wav|m4a|aac)$/i.test(f)) : [];
+    const audioFiles = existsSync(audioDir)
+      ? readdirSync(audioDir).filter((f) => /\.(mp3|wav|m4a|aac)$/i.test(f))
+      : [];
     if (audioFiles.length === 0) {
       return c.json({ ok: false, error: "No narration audio found in Audio/" }, 400);
     }
@@ -617,9 +631,15 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
     try {
       let html = readFileSync(sourcesIndex, "utf-8");
       // Update root data-duration
-      html = html.replace(/(id=["']root["'][^>]*data-duration=["'])[0-9.]+([^>]*["'])/, `$1${exactDuration}$2`);
+      html = html.replace(
+        /(id=["']root["'][^>]*data-duration=["'])[0-9.]+([^>]*["'])/,
+        `$1${exactDuration}$2`,
+      );
       // Update narration audio element data-duration if present
-      html = html.replace(/(<audio[^>]*id=["']narration["'][^>]*data-duration=["'])[0-9.]+([^>]*["'])/, `$1${exactDuration}$2`);
+      html = html.replace(
+        /(<audio[^>]*id=["']narration["'][^>]*data-duration=["'])[0-9.]+([^>]*["'])/,
+        `$1${exactDuration}$2`,
+      );
 
       await writeFile(sourcesIndex, html, "utf-8");
       return c.json({
@@ -659,7 +679,6 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
     const sourcesIndex = join(epRoot, "Sources", "index.html");
 
     let title = `${episodeId} Documentary`;
-    let hook = "In the defining moments of history, single decisions reshape the world.";
     let question = "What was the turning point?";
 
     if (briefFile && existsSync(briefFile)) {
@@ -678,7 +697,8 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
     if (existsSync(sourcesIndex)) {
       const html = readFileSync(sourcesIndex, "utf-8");
       // Find scene mounts: data-composition-id="s01" data-start="22.300"
-      const sceneRegex = /<div[^>]*data-composition-id=["'](s\d+)["'][^>]*data-start=["']([0-9.]+)["'][^>]*>/gi;
+      const sceneRegex =
+        /<div[^>]*data-composition-id=["'](s\d+)["'][^>]*data-start=["']([0-9.]+)["'][^>]*>/gi;
       let sm: RegExpExecArray | null;
 
       // Also read scene titles from script
@@ -780,7 +800,7 @@ ${title.toLowerCase().replace(/[^a-z0-9 ]/g, "")}, Visual History, Turning Point
     const episodeId = basename(epRoot);
 
     const channelMatch = epRoot.match(/\/ProductionStudio\/channels\/([^/]+)\/episodes\//);
-    const channel = channelMatch ? channelMatch[1] : "Turning_Point_Stories";
+    const channel = channelMatch?.[1] || "Turning_Point_Stories";
 
     // Locate source render: check Renders/ or Previews/
     const rendersDir = join(epRoot, "Renders");
@@ -797,10 +817,13 @@ ${title.toLowerCase().replace(/[^a-z0-9 ]/g, "")}, Visual History, Turning Point
     }
 
     if (!sourceRenderPath) {
-      return c.json({
-        ok: false,
-        error: "No rendered MP4 found in Renders/ or Previews/. Export a review render first.",
-      }, 400);
+      return c.json(
+        {
+          ok: false,
+          error: "No rendered MP4 found in Renders/ or Previews/. Export a review render first.",
+        },
+        400,
+      );
     }
 
     // Destination: exports/<Channel>/<EP_ID>/<EP_ID>_Master_v1.mp4

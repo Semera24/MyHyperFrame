@@ -1,11 +1,16 @@
+// @vitest-environment happy-dom
+
 import { describe, expect, it, vi } from "vitest";
 import { buildFrameCaptureUrl } from "./frameCapture";
 import {
+  assertProjectUrlAgreement,
   buildProjectApiPath,
   buildProjectHash,
   encodeProjectId,
   parseProjectHashRoute,
   parseProjectIdFromHash,
+  parseProjectIdFromSearch,
+  resolveUrlProjectId,
 } from "./projectRouting";
 
 describe("project routing utilities", () => {
@@ -116,5 +121,52 @@ describe("project routing utilities", () => {
     expect(buildProjectApiPath("Mañana demo", "/preview")).toBe(
       "/api/projects/Ma%C3%B1ana%20demo/preview",
     );
+  });
+
+  it("parses and reconciles project search params with hash routes", () => {
+    expect(parseProjectIdFromSearch("?project=EP06_Test")).toBe("EP06_Test");
+    expect(parseProjectIdFromSearch("")).toBeNull();
+
+    // When both exist and match
+    expect(
+      resolveUrlProjectId({ hash: "#project/EP06_Test", search: "?project=EP06_Test" }),
+    ).toEqual({
+      projectId: "EP06_Test",
+      hashProjectId: "EP06_Test",
+      searchProjectId: "EP06_Test",
+      hasConflict: false,
+    });
+
+    // When they conflict, the hash route wins but hasConflict is flagged
+    expect(
+      resolveUrlProjectId({ hash: "#project/EP_DISPOSABLE_TEST", search: "?project=EP06_Test" }),
+    ).toEqual({
+      projectId: "EP_DISPOSABLE_TEST",
+      hashProjectId: "EP_DISPOSABLE_TEST",
+      searchProjectId: "EP06_Test",
+      hasConflict: true,
+    });
+
+    const originalLocation = window.location;
+    try {
+      delete (window as unknown as { location?: unknown }).location;
+      window.location = {
+        search: "?project=EP06_Test",
+        hash: "#project/EP_DISPOSABLE_TEST",
+      } as unknown as Location;
+
+      expect(() => assertProjectUrlAgreement("EP_DISPOSABLE_TEST")).toThrow(
+        /URL project mismatch: query \(\?project=EP06_Test\) conflicts/,
+      );
+
+      window.location = {
+        search: "",
+        hash: "#project/EP_DISPOSABLE_TEST",
+      } as unknown as Location;
+
+      expect(() => assertProjectUrlAgreement("EP_DISPOSABLE_TEST")).not.toThrow();
+    } finally {
+      window.location = originalLocation;
+    }
   });
 });

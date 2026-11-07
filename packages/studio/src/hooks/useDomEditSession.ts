@@ -22,6 +22,7 @@ import { useKeyframeEaseCommits } from "./useKeyframeEaseCommits";
 import { useCommitPreflightCapabilities } from "./useCommitPreflightCapabilities";
 import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import { membersForDelete, timelineElementsForDelete } from "./domEditDeleteMembers";
+import { classifyLayerDeletionSafety } from "../components/editor/InspectorLayerActions";
 import type { RecordEditInput } from "./domEditDeleteMembers";
 import type { DomEditTimelineParams } from "./useDomSelectionTypes";
 import { useLivePreviewIframe } from "./useLivePreviewIframe";
@@ -305,6 +306,15 @@ export function useDomEditSession({
       // Same structural edit the timeline delete refuses mid-recording.
       if (isRecordingRef?.current) {
         showToast("Cannot edit timeline while recording", "error");
+        return;
+      }
+      const safety = classifyLayerDeletionSafety(selection);
+      if (safety.handAuthored) {
+        showToast(
+          safety.reason ||
+            "Authored directly in source HTML — cannot safely be deleted. Use 'Hide in Studio' in the Inspector.",
+          "info",
+        );
         return;
       }
       const members = membersForDelete(selection, domEditGroupSelectionsRef.current, options);

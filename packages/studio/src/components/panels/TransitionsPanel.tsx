@@ -4,7 +4,6 @@ import { useFileManagerContext } from "../../contexts/FileManagerContext";
 import { usePlayerStore } from "../../player";
 import {
   MOTION_PRESET_CATALOG,
-  MOTION_STYLE_PROFILES,
   STUDIO_MOTION_DRAG_MIME,
   compileMotionPreset,
   getMotionPresetById,
@@ -12,12 +11,10 @@ import {
   type StudioMotionDragPayload,
 } from "../editor/motionPresetCatalog";
 import {
-  STUDIO_MOTION_PATH,
   addStudioGsapMotion,
   removeStudioGsapMotionById,
   updateStudioGsapMotionById,
   type StudioGsapMotion,
-  type StudioGsapMotionDirection,
   type StudioMotionTarget,
 } from "../editor/studioMotion";
 import { useStudioMotionStore } from "../editor/useStudioMotionStore";
@@ -80,9 +77,9 @@ export interface TransitionsPanelProps {
 }
 
 export function TransitionsPanel({ recordEdit }: TransitionsPanelProps) {
-  const { projectId, activeCompPath, previewIframeRef, showToast } = useStudioShellContext();
+  const { activeCompPath, previewIframeRef, showToast } = useStudioShellContext();
   const { timelineElements } = useStudioPlaybackContext();
-  const { readOptionalProjectFile, writeProjectFile } = useFileManagerContext();
+  const { writeProjectFile } = useFileManagerContext();
 
   const currentTime = usePlayerStore((s) => s.currentTime);
   const requestSeek = usePlayerStore((s) => s.requestSeek);
@@ -381,15 +378,81 @@ export function TransitionsPanel({ recordEdit }: TransitionsPanelProps) {
       {/* Episode Scene Cuts Navigator */}
       {sceneCuts.length > 0 && (
         <div className="border-b border-neutral-800 bg-neutral-900/30 px-3 py-2">
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between gap-1.5 mb-1.5">
             <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
               Episode Scene Cuts
             </span>
-            {activeCut && (
-              <span className="text-[10px] text-purple-300 font-semibold font-mono">
-                {activeCut.fromSceneId} ➔ {activeCut.toSceneId} ({activeCut.cutTime.toFixed(2)}s)
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {activeCut && (
+                <span className="text-[10px] text-purple-300 font-semibold font-mono">
+                  {activeCut.fromSceneId} ➔ {activeCut.toSceneId} ({activeCut.cutTime.toFixed(2)}s)
+                </span>
+              )}
+              <button
+                type="button"
+                data-testid="transition-apply-all-cuts"
+                onClick={async () => {
+                  const activePreset =
+                    (activeTransition?.presetId &&
+                      getMotionPresetById(activeTransition.presetId)) ||
+                    getMotionPresetById("transition-crossfade") ||
+                    TRANSITION_PRESETS[0];
+                  if (!activePreset) return;
+                  let nextManifest = manifest;
+                  for (const cut of sceneCuts) {
+                    if (cut.appliedTransition?.id) {
+                      nextManifest = removeStudioGsapMotionById(
+                        nextManifest,
+                        cut.appliedTransition.id,
+                      );
+                    }
+                    const dur = activeTransition?.duration ?? activePreset.defaultDuration;
+                    const start = Math.max(0, Number((cut.cutTime - dur / 2).toFixed(2)));
+                    const transitionType = (activePreset.id.replace("transition-", "") ||
+                      "crossfade") as
+                      | "cut"
+                      | "crossfade"
+                      | "push"
+                      | "wipe"
+                      | "reveal"
+                      | "split"
+                      | "zoom"
+                      | "morph";
+                    const compiled = compileMotionPreset(activePreset.id, {
+                      start,
+                      duration: dur,
+                      stylePreset: activeStylePreset,
+                      transition: {
+                        fromSceneId: cut.fromSceneId,
+                        toSceneId: cut.toSceneId,
+                        cutTime: cut.cutTime,
+                        type: transitionType,
+                      },
+                    });
+                    nextManifest = addStudioGsapMotion(nextManifest, cut.target, compiled);
+                  }
+                  await commitManifest(
+                    nextManifest,
+                    `Apply ${activePreset.name} to all ${sceneCuts.length} scene cuts`,
+                    {
+                      writeProjectFile,
+                      recordEdit,
+                      iframeDoc: previewIframeRef.current?.contentDocument ?? null,
+                      activeCompPath,
+                      currentTime,
+                    },
+                  );
+                  showToast(
+                    `Applied ${activePreset.name} across ${sceneCuts.length} scene cut(s)`,
+                    "info",
+                  );
+                }}
+                title="Apply active transition (or Crossfade) to all scene cuts in this episode"
+                className="rounded border border-purple-500/40 bg-purple-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-purple-200 hover:bg-purple-500/30 transition-colors cursor-pointer"
+              >
+                Apply to All
+              </button>
+            </div>
           </div>
           <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
             {sceneCuts.map((cut, idx) => {

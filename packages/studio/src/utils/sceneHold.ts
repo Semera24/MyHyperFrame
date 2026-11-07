@@ -14,8 +14,12 @@ export function holdScenesOf(
     return undefined;
   }
   if (!hold) return undefined;
+  const selfCompId =
+    element && (element.type === "composition" || Boolean(element.compositionSrc))
+      ? element.domId || element.id
+      : "";
   const names = element
-    ? [...(element.compositionAncestors ?? []), element.parentCompositionId ?? ""]
+    ? [...(element.compositionAncestors ?? []), element.parentCompositionId ?? "", selfCompId]
     : [];
   return hold(names.filter(Boolean)).catch(() => {});
 }

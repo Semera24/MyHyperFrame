@@ -464,8 +464,15 @@ export const CompositionsTab = memo(function CompositionsTab({
   isRendering,
   lintFindingsByFile,
 }: CompositionsTabProps) {
+  const [searchQuery, setSearchQuery] = useState("");
   const thumbnailRevisions = usePlayerStore((state) => state.thumbnailRevisions);
   const previewBooted = usePlayerStore((state) => state.previewBooted);
+  const filteredCompositions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return compositions;
+    return compositions.filter((comp) => comp.toLowerCase().includes(q));
+  }, [compositions, searchQuery]);
+
   if (compositions.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center px-4">
@@ -475,23 +482,35 @@ export const CompositionsTab = memo(function CompositionsTab({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto" data-composition-list>
-      {compositions.map((comp) => (
-        <CompCard
-          key={`${projectId}:${comp}`}
-          projectId={projectId}
-          comp={comp}
-          isActive={activeComposition === comp}
-          isRoot={comp === masterCompositionPath}
-          onSelect={() => onSelect(comp)}
-          onRender={onRenderComposition ? () => onRenderComposition(comp) : undefined}
-          onAddToTimeline={onAddToTimeline ? () => onAddToTimeline(comp) : undefined}
-          isRendering={isRendering}
-          lintInfo={lintFindingsByFile?.get(comp)}
-          contentRevision={thumbnailRevisionOf(thumbnailRevisions, comp)}
-          previewBooted={previewBooted}
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div className="px-2.5 py-2 border-b border-neutral-800/80 shrink-0">
+        <input
+          type="search"
+          data-testid="media-search-input"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search scenes & compositions..."
+          className="w-full rounded bg-neutral-900 border border-neutral-800 px-2.5 py-1 text-[11px] text-neutral-100 placeholder:text-neutral-500 focus:border-amber-500/50 outline-hidden"
         />
-      ))}
+      </div>
+      <div className="flex-1 overflow-y-auto" data-composition-list>
+        {filteredCompositions.map((comp) => (
+          <CompCard
+            key={`${projectId}:${comp}`}
+            projectId={projectId}
+            comp={comp}
+            isActive={activeComposition === comp}
+            isRoot={comp === masterCompositionPath}
+            onSelect={() => onSelect(comp)}
+            onRender={onRenderComposition ? () => onRenderComposition(comp) : undefined}
+            onAddToTimeline={onAddToTimeline ? () => onAddToTimeline(comp) : undefined}
+            isRendering={isRendering}
+            lintInfo={lintFindingsByFile?.get(comp)}
+            contentRevision={thumbnailRevisionOf(thumbnailRevisions, comp)}
+            previewBooted={previewBooted}
+          />
+        ))}
+      </div>
     </div>
   );
 });

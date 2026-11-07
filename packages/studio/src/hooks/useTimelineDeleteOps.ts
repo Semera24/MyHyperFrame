@@ -25,6 +25,7 @@ import type {
   TimelineGroupMoveChange,
 } from "./useTimelineGroupEditing";
 import { studioApiFetch } from "../utils/studioApiFetch";
+import { isUserAddedStudioLayer } from "../components/editor/InspectorLayerActions";
 
 /** Apply already-resolved ripple changes to the surviving elements for the
  *  optimistic store update after a delete. Pure — no IO. */
@@ -94,6 +95,21 @@ export function useTimelineDeleteOps({
       if (!pid) throw new Error("No active project");
       const [element] = selection;
       if (!element) return;
+      const liveDoc = previewIframeRef.current?.contentDocument;
+      if (liveDoc?.querySelector("[data-composition-id]")) {
+        for (const candidate of selection) {
+          if (candidate.kind === "composition" || candidate.compositionSrc) continue;
+          const rawId = candidate.domId || candidate.id;
+          const liveNode = rawId ? liveDoc.getElementById(rawId) : null;
+          if (liveNode && !isUserAddedStudioLayer(liveNode, candidate)) {
+            showToast(
+              "Authored directly in source HTML — cannot safely be deleted. Use 'Hide in Studio' in the Inspector.",
+              "info",
+            );
+            return;
+          }
+        }
+      }
       const label =
         selection.length === 1 ? getTimelineElementLabel(element) : `${selection.length} clips`;
 
