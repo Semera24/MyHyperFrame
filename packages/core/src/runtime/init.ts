@@ -3471,6 +3471,16 @@ export function initSandboxRuntimeModular(): void {
       scheduleWebAudioForActiveClips();
     }
     hiddenAudioDirty = false;
+    const studioMotionSync = (
+      window as unknown as { __hfStudioMotionSyncAtTime?: (time: number) => void }
+    ).__hfStudioMotionSyncAtTime;
+    if (typeof studioMotionSync === "function") {
+      try {
+        studioMotionSync(currentTime);
+      } catch {
+        // ignore studio motion sync errors during visibility pass
+      }
+    }
   };
 
   // The timeline writes after the pass on a preview seek, so clips under a clip it just hid or showed

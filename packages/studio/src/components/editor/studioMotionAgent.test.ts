@@ -149,10 +149,76 @@ describe("studioMotionAgent — AI Agent Motion & Transition Helpers", () => {
         duration: 0.6,
       });
       expect(transRes.ok).toBe(true);
+      expect(transRes.cutId).toBe("cut-s01-s02");
+      expect(transRes.fromSceneId).toBe("s01");
+      expect(transRes.toSceneId).toBe("s02");
+      expect(transRes.startTime).toBe(2.7);
+      expect(transRes.cutTime).toBe(3);
+      expect(transRes.endTime).toBe(3.3);
+      expect(transRes.startFrame).toBe(81);
+      expect(transRes.cutFrame).toBe(90);
+      expect(transRes.endFrame).toBe(99);
+      expect(transRes.saveStatus).toBe("saved");
+      expect(transRes.conflict).toBeNull();
       expect(manifest.motions).toHaveLength(1);
       expect(manifest.motions[0]?.category).toBe("transition");
       expect(manifest.motions[0]?.start).toBe(2.7);
       expect(manifest.motions[0]?.duration).toBe(0.6);
+
+      // Re-applying on the same cut replaces existing transition (never stacks duplicates) and reports conflict
+      const firstId = manifest.motions[0]?.id ?? "";
+      const replaceRes = await agent.applySceneTransition({
+        presetId: "wipe",
+        fromSceneId: "s01",
+        toSceneId: "s02",
+        duration: 0.8,
+      });
+      expect(replaceRes.ok).toBe(true);
+      expect(replaceRes.cutId).toBe("cut-s01-s02");
+      expect(replaceRes.startFrame).toBe(78);
+      expect(replaceRes.cutFrame).toBe(90);
+      expect(replaceRes.endFrame).toBe(102);
+      expect(replaceRes.conflict).toEqual({
+        hadExistingTransition: true,
+        resolution: "replaced",
+        replacedTransitionIds: [firstId],
+        replacedTransitionNames: ["Fade / Crossfade"],
+      });
+      expect(manifest.motions.filter((m) => m.category === "transition")).toHaveLength(1);
+
+      // Updating transition duration recenters start around cutTime and returns updated frame numbers
+      const activeTransId = manifest.motions[0]?.id ?? "";
+      const updateRes = await agent.updateMotion(activeTransId, { duration: 0.6 });
+      expect(updateRes.ok).toBe(true);
+      expect(updateRes.cutId).toBe("cut-s01-s02");
+      expect(updateRes.startTime).toBe(2.7);
+      expect(updateRes.endTime).toBe(3.3);
+      expect(updateRes.startFrame).toBe(81);
+      expect(updateRes.endFrame).toBe(99);
+      expect(updateRes.saveStatus).toBe("saved");
+
+      // Rejects missing scene without mutating manifest
+      const missingSceneRes = await agent.applySceneTransition({
+        presetId: "crossfade",
+        toSceneId: "s99",
+        duration: 0.6,
+      });
+      expect(missingSceneRes.ok).toBe(false);
+      expect(missingSceneRes.saveStatus).toBe("rejected");
+      expect(missingSceneRes.error).toContain("Scene cut not found");
+      expect(manifest.motions).toHaveLength(1);
+
+      // Rejects invalid durations (<= 0, NaN, or exceeding adjacent scene duration)
+      for (const badDuration of [0, -0.5, Number.NaN, 4.5]) {
+        const badDurRes = await agent.applySceneTransition({
+          presetId: "crossfade",
+          toSceneId: "s02",
+          duration: badDuration,
+        });
+        expect(badDurRes.ok).toBe(false);
+        expect(badDurRes.saveStatus).toBe("rejected");
+      }
+      expect(manifest.motions).toHaveLength(1);
 
       const effectRes = await agent.applyObjectEffect({
         targetId: "s01-evidence-card",
@@ -165,6 +231,7 @@ describe("studioMotionAgent — AI Agent Motion & Transition Helpers", () => {
       const removeRes = await agent.removeSceneTransition({ toSceneId: "s02" });
       expect(removeRes.ok).toBe(true);
       expect(removeRes.removedCount).toBe(1);
+      expect(removeRes.saveStatus).toBe("saved");
       expect(manifest.motions).toHaveLength(1);
     } finally {
       cleanup();

@@ -35,7 +35,9 @@ function* timelineCandidates(
   win: IframeWindow,
 ): Generator<PlaybackAdapter> {
   if (win.__timeline) yield wrapTimeline(win.__timeline);
-  const keys = win.__timelines ? Object.keys(win.__timelines) : [];
+  const keys = win.__timelines
+    ? Object.keys(win.__timelines).filter((k) => k !== "studio-motion")
+    : [];
   if (!win.__timelines || keys.length === 0) return;
   // The outermost [data-composition-id] is the master; Object.keys() order would let a
   // sub-composition hijack transport.

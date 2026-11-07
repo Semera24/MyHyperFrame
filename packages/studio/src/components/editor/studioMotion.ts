@@ -1,57 +1,7 @@
 // Public surface — re-exports types, constants, and ops; owns DOM application logic.
 
-export {
-  STUDIO_MOTION_PATH,
-  STUDIO_MOTION_TIMELINE_ID,
-  STUDIO_GSAP_EASE_OPTIONS,
-  type StudioMotionCategory,
-  type StudioMotionStylePreset,
-  type StudioMotionTarget,
-  type StudioGsapMotionValues,
-  type StudioMotionKeyframe,
-  type StudioMotionPathPoint,
-  type StudioMotionPathConfig,
-  type StudioSceneTransitionConfig,
-  type StudioGsapCustomEase,
-  type StudioCustomEaseControlPoints,
-  type StudioGsapMotion,
-  type StudioGsapMotionPreset,
-  type StudioGsapMotionDirection,
-  type StudioGsapPresetMotionOptions,
-  type StudioMotionManifest,
-  type StudioGsapTimeline,
-  type StudioMotionWindow,
-} from "./studioMotionTypes";
-
-export {
-  clampStudioCustomEasePoints,
-  parseStudioCustomEaseData,
-  serializeStudioCustomEaseData,
-  controlPointsForGsapEase,
-  buildStudioGsapPresetMotion,
-  emptyStudioMotionManifest,
-  parseStudioMotionManifest,
-  serializeStudioMotionManifest,
-  isStudioMotionManifestPath,
-  selectionTarget,
-  targetKey,
-  sameSelectionTarget,
-  upsertStudioGsapMotion,
-  addStudioGsapMotion,
-  updateStudioGsapMotionById,
-  removeStudioGsapMotionById,
-  duplicateStudioGsapMotionById,
-  reorderStudioGsapMotionById,
-  removeStudioMotionForSelection,
-  getStudioMotionForSelection,
-  getStudioMotionsForSelection,
-  readStudioMotionFromElement,
-  readStudioMotionsFromElement,
-  writeStudioMotionToElement,
-  writeStudioMotionsToElement,
-  clearStudioMotionFromElement,
-  type StudioElementMotionPayload,
-} from "./studioMotionOps";
+export * from "./studioMotionTypes";
+export * from "./studioMotionOps";
 
 import { isHtmlElement } from "@hyperframes/core/runtime/dom-realm";
 import { readStudioMotionsFromElement, type StudioElementMotionPayload } from "./studioMotionOps";
@@ -137,16 +87,56 @@ function resolveTarget(
   }
 }
 
+const STUDIO_TRANSITION_SCENE_ATTR = "data-hf-studio-transition-scene";
+const ORIGINAL_STYLE_ATTR_PAIRS = [
+  [STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR, "transform"],
+  [STUDIO_MOTION_ORIGINAL_OPACITY_ATTR, "opacity"],
+  [STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR, "visibility"],
+  [STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR, "clipPath"],
+  [STUDIO_MOTION_ORIGINAL_FILTER_ATTR, "filter"],
+  [STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR, "backgroundColor"],
+  [STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR, "borderColor"],
+  [STUDIO_MOTION_ORIGINAL_COLOR_ATTR, "color"],
+] as const;
+
 function captureOriginalMotionStyles(element: HTMLElement): void {
   if (element.hasAttribute(STUDIO_MOTION_ATTR)) return;
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR, element.style.transform);
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_OPACITY_ATTR, element.style.opacity);
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR, element.style.visibility);
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR, element.style.clipPath);
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_FILTER_ATTR, element.style.filter);
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR, element.style.backgroundColor);
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR, element.style.borderColor);
-  element.setAttribute(STUDIO_MOTION_ORIGINAL_COLOR_ATTR, element.style.color);
+  const isTimedOrScene =
+    element.hasAttribute("data-start") || element.hasAttribute("data-composition-id");
+  for (const [attr, prop] of ORIGINAL_STYLE_ATTR_PAIRS) {
+    const raw = element.style[prop];
+    const val = prop === "visibility" && isTimedOrScene && raw === "hidden" ? "" : raw;
+    element.setAttribute(attr, val);
+  }
+}
+
+function syncSceneNominalVisibility(sceneEl: HTMLElement, safeTime: number): void {
+  const sceneStart = Number.parseFloat(sceneEl.getAttribute("data-start") || "0") || 0;
+  const sceneDur = Number.parseFloat(sceneEl.getAttribute("data-duration") || "3.0") || 3.0;
+  const inSceneWindow = safeTime >= sceneStart && safeTime < sceneStart + sceneDur - 1e-6;
+  sceneEl.style.removeProperty("opacity");
+  if (!inSceneWindow) {
+    sceneEl.style.setProperty("visibility", "hidden", "important");
+    sceneEl.setAttribute("data-hf-clip-hidden", "");
+    return;
+  }
+  sceneEl.style.setProperty("visibility", "visible", "important");
+  sceneEl.removeAttribute("data-hf-clip-hidden");
+  const localTime = safeTime - sceneStart;
+  sceneEl.querySelectorAll("*").forEach((c) => {
+    if (!isHtmlElement(c) || c.hasAttribute("data-hidden")) return;
+    if (c.hasAttribute("data-start")) {
+      const cStart = Number.parseFloat(c.getAttribute("data-start") || "0") || 0;
+      const cDur =
+        Number.parseFloat(c.getAttribute("data-duration") || String(sceneDur)) || sceneDur;
+      const cInWindow = localTime >= cStart - 1e-6 && localTime < cStart + cDur + 1e-6;
+      if (cInWindow) c.removeAttribute("data-hf-clip-hidden");
+      else c.setAttribute("data-hf-clip-hidden", "");
+      c.style.setProperty("visibility", cInWindow ? "visible" : "hidden", "important");
+    } else if (c.style.visibility === "hidden") {
+      c.style.removeProperty("visibility");
+    }
+  });
 }
 
 function restoreElementInlineStylesKeepAttr(
@@ -154,25 +144,15 @@ function restoreElementInlineStylesKeepAttr(
   gsap: StudioMotionWindow["gsap"],
 ): void {
   gsap?.set?.(element, { clearProps: "transform,opacity,visibility" });
-  element.style.transform = element.getAttribute(STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR) ?? "";
-  element.style.opacity = element.getAttribute(STUDIO_MOTION_ORIGINAL_OPACITY_ATTR) ?? "";
-  element.style.visibility = element.getAttribute(STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR) ?? "";
-  if (element.hasAttribute(STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR)) {
-    element.style.clipPath = element.getAttribute(STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR) ?? "";
-  }
-  if (element.hasAttribute(STUDIO_MOTION_ORIGINAL_FILTER_ATTR)) {
-    element.style.filter = element.getAttribute(STUDIO_MOTION_ORIGINAL_FILTER_ATTR) ?? "";
-  }
-  if (element.hasAttribute(STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR)) {
-    element.style.backgroundColor =
-      element.getAttribute(STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR) ?? "";
-  }
-  if (element.hasAttribute(STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR)) {
-    element.style.borderColor =
-      element.getAttribute(STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR) ?? "";
-  }
-  if (element.hasAttribute(STUDIO_MOTION_ORIGINAL_COLOR_ATTR)) {
-    element.style.color = element.getAttribute(STUDIO_MOTION_ORIGINAL_COLOR_ATTR) ?? "";
+  for (const [attr, prop] of ORIGINAL_STYLE_ATTR_PAIRS) {
+    if (
+      prop === "transform" ||
+      prop === "opacity" ||
+      prop === "visibility" ||
+      element.hasAttribute(attr)
+    ) {
+      element.style[prop] = element.getAttribute(attr) ?? "";
+    }
   }
 }
 
@@ -180,20 +160,25 @@ function restoreStudioMotionElement(element: HTMLElement, gsap: StudioMotionWind
   if (!element.hasAttribute(STUDIO_MOTION_ATTR)) return;
   restoreElementInlineStylesKeepAttr(element, gsap);
   element.removeAttribute(STUDIO_MOTION_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_TRANSFORM_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_OPACITY_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_VISIBILITY_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_CLIP_PATH_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_FILTER_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_BG_COLOR_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR);
-  element.removeAttribute(STUDIO_MOTION_ORIGINAL_COLOR_ATTR);
+  for (const [attr] of ORIGINAL_STYLE_ATTR_PAIRS) element.removeAttribute(attr);
 }
 
-function restoreStudioMotionElements(document: Document, gsap: StudioMotionWindow["gsap"]): void {
+function restoreStudioMotionElements(
+  document: Document,
+  gsap: StudioMotionWindow["gsap"],
+  safeTime = 0,
+): void {
   for (const element of Array.from(document.querySelectorAll(`[${STUDIO_MOTION_ATTR}]`))) {
     if (isHtmlElement(element) && element.getAttribute(STUDIO_MOTION_ATTR) === "true") {
       restoreStudioMotionElement(element, gsap);
+    }
+  }
+  for (const sceneEl of Array.from(
+    document.querySelectorAll(`[${STUDIO_TRANSITION_SCENE_ATTR}]`),
+  )) {
+    if (isHtmlElement(sceneEl)) {
+      sceneEl.removeAttribute(STUDIO_TRANSITION_SCENE_ATTR);
+      syncSceneNominalVisibility(sceneEl, safeTime);
     }
   }
 }
@@ -257,13 +242,17 @@ function scheduleMotionTweensOnTimeline(
     if (fromEl) {
       captureOriginalMotionStyles(fromEl);
       fromEl.setAttribute(STUDIO_MOTION_ATTR, "true");
+      fromEl.setAttribute(STUDIO_TRANSITION_SCENE_ATTR, "true");
+      fromEl.setAttribute("data-hf-scene-no-swap", "studio-transition");
       timeline.fromTo(
         fromEl,
-        { opacity: 1, autoAlpha: 1 },
-        { opacity: 0, autoAlpha: 0, duration, ease, overwrite: "auto", immediateRender: false },
+        { opacity: 1 },
+        { opacity: 0, duration, ease, overwrite: "auto", immediateRender: false },
         effectiveStart,
       );
     }
+    element.setAttribute(STUDIO_TRANSITION_SCENE_ATTR, "true");
+    element.setAttribute("data-hf-scene-no-swap", "studio-transition");
   }
 
   const fromVars: Record<string, unknown> = { ...motion.from };
@@ -274,6 +263,12 @@ function scheduleMotionTweensOnTimeline(
     overwrite: "auto",
     immediateRender: false,
   };
+  if (motion.category === "transition") {
+    delete fromVars.autoAlpha;
+    delete toVars.autoAlpha;
+    if (fromVars.opacity === undefined) fromVars.opacity = 0;
+    if (toVars.opacity === undefined) toVars.opacity = 1;
+  }
   timeline.fromTo(element, fromVars, toVars, effectiveStart);
   return 1;
 }
@@ -298,6 +293,14 @@ function readCurrentTime(win: StudioMotionWindow, fallback?: number): number {
   return 0;
 }
 
+function seekSceneTimeline(win: StudioMotionWindow, sceneId: string, targetTime: number): void {
+  const tl = win.__timelines?.[sceneId] as
+    | { totalTime?: (t: number, s?: boolean) => unknown; time?: (t: number) => unknown }
+    | undefined;
+  if (typeof tl?.totalTime === "function") tl.totalTime(targetTime, true);
+  else if (typeof tl?.time === "function") tl.time(targetTime);
+}
+
 function applySceneTransitionsPass(
   document: Document,
   win: StudioMotionWindow,
@@ -305,11 +308,18 @@ function applySceneTransitionsPass(
     category: string;
     duration: number;
     start: number;
-    delay?: number;
-    transition?: { fromSceneId?: string; toSceneId?: string; cutTime?: number };
+    delay?: number | undefined;
+    transition?:
+      | {
+          fromSceneId?: string | undefined;
+          toSceneId?: string | undefined;
+          cutTime?: number | undefined;
+        }
+      | undefined;
   }>,
   safeTime: number,
 ): void {
+  const heldSceneParts = new Set<string>();
   for (const motion of motions) {
     if (motion.category !== "transition") continue;
     const fromSceneId = motion.transition?.fromSceneId || "s01";
@@ -317,6 +327,14 @@ function applySceneTransitionsPass(
     const fromEl = document.getElementById(fromSceneId);
     const toEl = document.getElementById(toSceneId);
     if (!fromEl || !toEl) continue;
+
+    for (const sceneEl of [fromEl, toEl]) {
+      sceneEl.setAttribute(STUDIO_TRANSITION_SCENE_ATTR, "true");
+      sceneEl.setAttribute("data-hf-scene-no-swap", "studio-transition");
+      sceneEl.removeAttribute("data-hf-far-scene");
+      const partName = sceneEl.getAttribute("data-hf-scene-part") || sceneEl.id;
+      if (partName) heldSceneParts.add(partName);
+    }
 
     const tStart = Math.max(0, motion.start + (motion.delay ?? 0));
     const duration = motion.duration;
@@ -332,8 +350,8 @@ function applySceneTransitionsPass(
           c.removeAttribute("data-hf-clip-hidden"),
         );
         el.querySelectorAll("*").forEach((c) => {
-          if (c instanceof HTMLElement && c.style.visibility === "hidden")
-            c.style.removeProperty("visibility");
+          if (isHtmlElement(c) && !c.hasAttribute("data-hidden") && c.style.visibility === "hidden")
+            c.style.setProperty("visibility", "visible", "important");
         });
       }
 
@@ -345,24 +363,52 @@ function applySceneTransitionsPass(
 
       if (safeTime >= cutTime) {
         const s01Dur = parseFloat(fromEl.getAttribute("data-duration") || "3.0");
-        const s01Tl = win.__timelines?.[fromSceneId];
-        if (s01Tl && typeof (s01Tl as { time?: (t: number) => unknown }).time === "function") {
-          (s01Tl as { time: (t: number) => unknown }).time(s01Dur);
-        }
-      }
-      if (safeTime < cutTime) {
-        const s02Tl = win.__timelines?.[toSceneId];
-        if (s02Tl && typeof (s02Tl as { time?: (t: number) => unknown }).time === "function") {
-          (s02Tl as { time: (t: number) => unknown }).time(0);
-        }
+        seekSceneTimeline(win, fromSceneId, s01Dur);
+      } else {
+        seekSceneTimeline(win, toSceneId, 0);
       }
     } else if (safeTime < tStart) {
-      fromEl.style.removeProperty("opacity");
+      syncSceneNominalVisibility(fromEl, safeTime);
       toEl.style.setProperty("opacity", "0", "important");
+      toEl.style.setProperty("visibility", "hidden", "important");
+      toEl.setAttribute("data-hf-clip-hidden", "");
     } else if (safeTime > tEnd) {
       fromEl.style.setProperty("opacity", "0", "important");
-      toEl.style.removeProperty("opacity");
+      fromEl.style.setProperty("visibility", "hidden", "important");
+      fromEl.setAttribute("data-hf-clip-hidden", "");
+      syncSceneNominalVisibility(toEl, safeTime);
     }
+  }
+
+  const holdScenesFn = (
+    win as unknown as { __hfHoldScenes?: (names: string[], holder?: string) => Promise<void> }
+  ).__hfHoldScenes;
+  if (typeof holdScenesFn === "function" && heldSceneParts.size > 0) {
+    void holdScenesFn([...heldSceneParts], "studio-transition");
+  }
+}
+
+function compareMotionsByTime(
+  a: { start: number; delay?: number | undefined; order?: number | undefined },
+  b: { start: number; delay?: number | undefined; order?: number | undefined },
+): number {
+  const diff = a.start + (a.delay ?? 0) - (b.start + (b.delay ?? 0));
+  return Math.abs(diff) > 1e-6 ? diff : (a.order ?? 0) - (b.order ?? 0);
+}
+
+function finalizeStudioTimeline(
+  win: StudioMotionWindow,
+  timeline: NonNullable<StudioMotionWindow["__timelines"]>[string],
+  safeTime: number,
+): void {
+  win.__timelines = win.__timelines ?? {};
+  win.__timelines[STUDIO_MOTION_TIMELINE_ID] = timeline;
+  timeline.pause?.();
+  if (timeline.totalTime) {
+    if (safeTime > 0) timeline.totalTime(0, true);
+    timeline.totalTime(safeTime, false);
+  } else {
+    timeline.time?.(safeTime);
   }
 }
 
@@ -373,31 +419,43 @@ export function applyStudioMotionManifest(
   currentTime?: number,
 ): number {
   const win = document.defaultView as
-    | (StudioMotionWindow & { __hfStudioMotionApplying?: boolean })
+    | (StudioMotionWindow & {
+        __hfStudioMotionApplying?: boolean;
+        __hfStudioMotionSyncAtTime?: (time: number) => void;
+      })
     | null;
   if (!win || win.__hfStudioMotionApplying) return 0;
   win.__hfStudioMotionApplying = true;
   try {
     const gsap = win.gsap;
+    const safeTime = readCurrentTime(win, currentTime);
     win.__timelines = win.__timelines ?? {};
     win.__timelines[STUDIO_MOTION_TIMELINE_ID]?.kill?.();
     delete win.__timelines[STUDIO_MOTION_TIMELINE_ID];
-    restoreStudioMotionElements(document, gsap);
+    restoreStudioMotionElements(document, gsap, safeTime);
     win.__hfStudioMotionManifest = manifest;
     win.__hfStudioMotionActiveComp = activeCompositionPath;
-    if (!gsap?.timeline || manifest.motions.length === 0) return 0;
+    win.__hfStudioMotionSyncAtTime = (syncTime: number) => {
+      if (win.__hfStudioMotionApplying) return;
+      const activeManifest = win.__hfStudioMotionManifest;
+      if (!activeManifest || activeManifest.motions.length === 0) return;
+      const tl = win.__timelines?.[STUDIO_MOTION_TIMELINE_ID];
+      if (tl?.totalTime) tl.totalTime(syncTime, true);
+      else tl?.time?.(syncTime);
+      applySceneTransitionsPass(document, win, activeManifest.motions, syncTime);
+    };
+    if (!gsap?.timeline || manifest.motions.length === 0) {
+      const holdScenesFn = (
+        win as unknown as { __hfHoldScenes?: (names: string[], holder?: string) => Promise<void> }
+      ).__hfHoldScenes;
+      if (typeof holdScenesFn === "function") void holdScenesFn([], "studio-transition");
+      return 0;
+    }
 
-    const timeline = gsap.timeline({
-      paused: true,
-      defaults: { overwrite: "auto" },
-    });
+    const timeline = gsap.timeline({ paused: true, defaults: { overwrite: "auto" } });
     let applied = 0;
     const seenElements = new Set<HTMLElement>();
-    const sortedMotions = [...manifest.motions].sort((a, b) => {
-      const diff = a.start + (a.delay ?? 0) - (b.start + (b.delay ?? 0));
-      if (Math.abs(diff) > 1e-6) return diff;
-      return (a.order ?? 0) - (b.order ?? 0);
-    });
+    const sortedMotions = [...manifest.motions].sort(compareMotionsByTime);
 
     for (const motion of sortedMotions) {
       const element = resolveTarget(document, motion.target, activeCompositionPath);
@@ -415,16 +473,7 @@ export function applyStudioMotionManifest(
       timeline.kill?.();
       return 0;
     }
-    win.__timelines[STUDIO_MOTION_TIMELINE_ID] = timeline;
-    timeline.pause?.();
-    const safeTime = readCurrentTime(win, currentTime);
-    if (timeline.totalTime) {
-      if (safeTime > 0) timeline.totalTime(0, true);
-      timeline.totalTime(safeTime, false);
-    } else {
-      timeline.time?.(safeTime);
-    }
-
+    finalizeStudioTimeline(win, timeline, safeTime);
     applySceneTransitionsPass(document, win, sortedMotions, safeTime);
     return applied;
   } finally {
@@ -456,12 +505,7 @@ export function applyStudioMotionFromDom(document: Document, currentTime?: numbe
     const motions = readStudioMotionsFromElement(el);
     if (motions.length > 0) {
       restoreElementInlineStylesKeepAttr(el, gsap);
-      const sorted = [...motions].sort((a, b) => {
-        const diff = a.start + (a.delay ?? 0) - (b.start + (b.delay ?? 0));
-        if (Math.abs(diff) > 1e-6) return diff;
-        return (a.order ?? 0) - (b.order ?? 0);
-      });
-      motionEntries.push({ element: el, motions: sorted });
+      motionEntries.push({ element: el, motions: [...motions].sort(compareMotionsByTime) });
     }
   }
 
@@ -481,14 +525,13 @@ export function applyStudioMotionFromDom(document: Document, currentTime?: numbe
 
   win.__hfStudioMotionApplying = true;
   try {
-    const timeline = gsap.timeline({
-      paused: true,
-      defaults: { overwrite: "auto" },
-    });
+    const timeline = gsap.timeline({ paused: true, defaults: { overwrite: "auto" } });
     let applied = 0;
+    const allDomMotions: StudioElementMotionPayload[] = [];
     for (const { element, motions } of motionEntries) {
       if (!timeline.fromTo) continue;
       motions.forEach((motion, index) => {
+        allDomMotions.push(motion);
         applied += scheduleMotionTweensOnTimeline(win, timeline, element, motion, index === 0);
       });
     }
@@ -497,17 +540,9 @@ export function applyStudioMotionFromDom(document: Document, currentTime?: numbe
       timeline.kill?.();
       return 0;
     }
-    win.__timelines[STUDIO_MOTION_TIMELINE_ID] = timeline;
-    timeline.pause?.();
     const safeTime = readCurrentTime(win, currentTime);
-    if (timeline.totalTime) {
-      if (safeTime > 0) timeline.totalTime(0, true);
-      timeline.totalTime(safeTime, false);
-    } else {
-      timeline.time?.(safeTime);
-    }
-
-    applySceneTransitionsPass(document, win, sortedMotions, safeTime);
+    finalizeStudioTimeline(win, timeline, safeTime);
+    applySceneTransitionsPass(document, win, allDomMotions, safeTime);
     return applied;
   } finally {
     win.__hfStudioMotionApplying = false;

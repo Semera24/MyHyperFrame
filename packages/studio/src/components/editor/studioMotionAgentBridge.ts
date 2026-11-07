@@ -43,6 +43,35 @@ export interface HyperFramesAgentApplyTransitionOptions {
   applyToAllCuts?: boolean;
 }
 
+export interface HyperFramesAgentTransitionConflict {
+  hadExistingTransition: boolean;
+  resolution: "replaced";
+  replacedTransitionIds: string[];
+  replacedTransitionNames: string[];
+}
+
+export interface HyperFramesAgentApplyTransitionResult {
+  ok: boolean;
+  error?: string;
+  cutId: string | null;
+  fromSceneId?: string;
+  toSceneId?: string;
+  fps?: number;
+  startTime?: number;
+  cutTime?: number;
+  endTime?: number;
+  duration?: number;
+  startFrame?: number;
+  cutFrame?: number;
+  endFrame?: number;
+  saveStatus: "saved" | "failed" | "rejected";
+  manifestPath: string;
+  conflict: HyperFramesAgentTransitionConflict | null;
+  transition?: StudioGsapMotion;
+  transitions?: StudioGsapMotion[];
+  manifest: StudioMotionManifest;
+}
+
 export interface HyperFramesAgentBridge {
   help: () => Record<string, unknown>;
   listPresets: (category?: StudioMotionCategory) => ReadonlyArray<{
@@ -64,6 +93,7 @@ export interface HyperFramesAgentBridge {
     }>;
     sceneCuts: Array<{
       index: number;
+      cutId: string;
       fromSceneId: string;
       toSceneId: string;
       cutTime: number;
@@ -79,21 +109,38 @@ export interface HyperFramesAgentBridge {
     motion?: StudioGsapMotion;
     manifest: StudioMotionManifest;
   }>;
-  applySceneTransition: (options: HyperFramesAgentApplyTransitionOptions) => Promise<{
-    ok: boolean;
-    error?: string;
-    transitions?: StudioGsapMotion[];
-    manifest: StudioMotionManifest;
-  }>;
+  applySceneTransition: (
+    options: HyperFramesAgentApplyTransitionOptions,
+  ) => Promise<HyperFramesAgentApplyTransitionResult>;
   updateMotion: (
     motionId: string,
     patch: Partial<StudioElementMotionPayload>,
-  ) => Promise<{ ok: boolean; error?: string; manifest: StudioMotionManifest }>;
+  ) => Promise<{
+    ok: boolean;
+    error?: string;
+    cutId?: string | null;
+    startTime?: number;
+    cutTime?: number;
+    endTime?: number;
+    duration?: number;
+    startFrame?: number;
+    cutFrame?: number;
+    endFrame?: number;
+    saveStatus?: "saved" | "failed" | "rejected";
+    motion?: StudioGsapMotion;
+    manifest: StudioMotionManifest;
+  }>;
   removeMotion: (motionId: string) => Promise<{ ok: boolean; manifest: StudioMotionManifest }>;
   removeSceneTransition: (options?: {
     toSceneId?: string;
+    fromSceneId?: string;
     cutIndex?: number;
-  }) => Promise<{ ok: boolean; removedCount: number; manifest: StudioMotionManifest }>;
+  }) => Promise<{
+    ok: boolean;
+    removedCount: number;
+    saveStatus: "saved" | "failed";
+    manifest: StudioMotionManifest;
+  }>;
   clearAllMotions: () => Promise<{ ok: boolean; manifest: StudioMotionManifest }>;
 }
 
@@ -128,13 +175,42 @@ declare global {
 export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps): () => void {
   if (typeof window === "undefined") return () => {};
 
+  const MANIFEST_PATH = ".hyperframes/studio-motion.json";
+
+  const resolvePreviewDoc = (): Document | null => {
+    const direct = deps.getIframeDoc();
+    if (direct) return direct;
+    try {
+      const playerHost = document.querySelector("hyperframes-player");
+      const shadowIframe = playerHost?.shadowRoot?.querySelector(
+        "iframe",
+      ) as HTMLIFrameElement | null;
+      if (shadowIframe?.contentDocument) return shadowIframe.contentDocument;
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
+  const resolveFps = (): number => {
+    const doc = resolvePreviewDoc();
+    const fpsAttr =
+      doc?.querySelector("[data-fps]")?.getAttribute("data-fps") ??
+      doc?.getElementById("master-stage")?.getAttribute("data-fps");
+    const parsed = fpsAttr ? Number.parseFloat(fpsAttr) : Number.NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+  };
+
   const discoverSceneCuts = () => {
-    const doc = deps.getIframeDoc();
+    const doc = resolvePreviewDoc();
     const manifest = deps.getManifest();
     const cuts: Array<{
       index: number;
+      cutId: string;
       fromSceneId: string;
       toSceneId: string;
+      fromDuration: number;
+      toDuration: number;
       cutTime: number;
       appliedTransition: StudioGsapMotion | null;
     }> = [];
@@ -152,16 +228,28 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
         const a = subComps[i]!;
         const b = subComps[i + 1]!;
         const cutTime = Number(b.getAttribute("data-start") || 0);
+        const fromDuration = Number.parseFloat(a.getAttribute("data-duration") || "3.0") || 3.0;
+        const toDuration = Number.parseFloat(b.getAttribute("data-duration") || "3.0") || 3.0;
         const fromSceneId = a.id || a.getAttribute("data-composition-id") || `s0${i + 1}`;
         const toSceneId = b.id || b.getAttribute("data-composition-id") || `s0${i + 2}`;
+        const cutId = `cut-${fromSceneId}-${toSceneId}`;
         const applied =
           manifest.motions.find(
             (m) =>
               m.category === "transition" &&
-              m.target.id === toSceneId &&
-              Math.abs((m.transition?.cutTime ?? m.start) - cutTime) < 1.0,
+              (m.target.id === toSceneId || m.transition?.toSceneId === toSceneId) &&
+              Math.abs((m.transition?.cutTime ?? m.start + m.duration / 2) - cutTime) < 1.0,
           ) ?? null;
-        cuts.push({ index: i, fromSceneId, toSceneId, cutTime, appliedTransition: applied });
+        cuts.push({
+          index: i,
+          cutId,
+          fromSceneId,
+          toSceneId,
+          fromDuration,
+          toDuration,
+          cutTime,
+          appliedTransition: applied,
+        });
       }
     }
 
@@ -178,14 +266,24 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
         const cutTime = b.start;
         const fromSceneId = a.domId || a.id;
         const toSceneId = b.domId || b.id;
+        const cutId = `cut-${fromSceneId}-${toSceneId}`;
         const applied =
           manifest.motions.find(
             (m) =>
               m.category === "transition" &&
-              m.target.id === toSceneId &&
-              Math.abs((m.transition?.cutTime ?? m.start) - cutTime) < 1.0,
+              (m.target.id === toSceneId || m.transition?.toSceneId === toSceneId) &&
+              Math.abs((m.transition?.cutTime ?? m.start + m.duration / 2) - cutTime) < 1.0,
           ) ?? null;
-        cuts.push({ index: i, fromSceneId, toSceneId, cutTime, appliedTransition: applied });
+        cuts.push({
+          index: i,
+          cutId,
+          fromSceneId,
+          toSceneId,
+          fromDuration: a.duration || 3.0,
+          toDuration: b.duration || 3.0,
+          cutTime,
+          appliedTransition: applied,
+        });
       }
     }
     return cuts;
@@ -193,7 +291,7 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
 
   const discoverLayers = () => {
     const activeCompPath = deps.getActiveCompPath() || "index.html";
-    const doc = deps.getIframeDoc();
+    const doc = resolvePreviewDoc();
     const seen = new Set<string>();
     const layers: Array<{
       id: string;
@@ -244,11 +342,11 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
           "List addressable layer elements and scene cuts in the current composition.",
         "applyObjectEffect({ targetId, presetId, placement?, start?, duration?, direction?, distance?, ease?, stylePreset?, mode? })":
           "Apply an Entrance, Emphasis, Exit, or Path effect by element ID with smart placement.",
-        "applySceneTransition({ presetId, toSceneId?, cutIndex?, duration?, direction?, ease?, applyToAllCuts? })":
-          "Apply a two-scene transition ('crossfade', 'push', 'wipe', 'reveal', 'split', 'zoom', 'morph') to a scene cut or all cuts.",
+        "applySceneTransition({ presetId, toSceneId?, fromSceneId?, cutIndex?, duration?, direction?, ease?, applyToAllCuts? })":
+          "Apply a two-scene transition ('crossfade', 'push', 'wipe', 'reveal', 'split', 'zoom', 'morph') to a scene cut or all cuts. Returns cutId, startFrame, cutFrame, endFrame, saveStatus, and conflict info.",
         "updateMotion(motionId, patch)": "Update timing, duration, direction, distance, or ease.",
         "removeMotion(motionId)": "Remove a specific motion or transition by ID.",
-        "removeSceneTransition({ toSceneId?, cutIndex? })":
+        "removeSceneTransition({ toSceneId?, fromSceneId?, cutIndex? })":
           "Remove a scene transition and restore a hard cut.",
       },
     }),
@@ -268,6 +366,7 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
       layers: discoverLayers(),
       sceneCuts: discoverSceneCuts().map((c) => ({
         index: c.index,
+        cutId: c.cutId,
         fromSceneId: c.fromSceneId,
         toSceneId: c.toSceneId,
         cutTime: c.cutTime,
@@ -345,8 +444,31 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
         return {
           ok: false,
           error: `Unknown transition preset '${options.presetId}'. Valid transitions: crossfade, push, wipe, reveal, split, zoom, morph.`,
+          cutId: null,
+          saveStatus: "rejected",
+          manifestPath: MANIFEST_PATH,
+          conflict: null,
           manifest: deps.getManifest(),
         };
+      }
+
+      if (options.duration !== undefined) {
+        if (
+          typeof options.duration !== "number" ||
+          !Number.isFinite(options.duration) ||
+          options.duration <= 0 ||
+          options.duration > 5.0
+        ) {
+          return {
+            ok: false,
+            error: `Invalid transition duration '${String(options.duration)}'. Duration must be a finite number between 0.05s and 5.0s.`,
+            cutId: null,
+            saveStatus: "rejected",
+            manifestPath: MANIFEST_PATH,
+            conflict: null,
+            manifest: deps.getManifest(),
+          };
+        }
       }
 
       const cuts = discoverSceneCuts();
@@ -354,22 +476,77 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
         return {
           ok: false,
           error: "No scene cuts found in the active composition.",
+          cutId: null,
+          saveStatus: "rejected",
+          manifestPath: MANIFEST_PATH,
+          conflict: null,
           manifest: deps.getManifest(),
         };
       }
 
-      const targetCuts = options.applyToAllCuts
-        ? cuts
-        : [
-            cuts.find(
-              (c) =>
-                (typeof options.cutIndex === "number" && c.index === options.cutIndex) ||
-                (options.toSceneId && c.toSceneId === options.toSceneId.replace(/^#/, "")) ||
-                (options.fromSceneId && c.fromSceneId === options.fromSceneId.replace(/^#/, "")),
-            ) ?? cuts[0]!,
-          ];
+      const cleanFromId = options.fromSceneId?.replace(/^#/, "").trim() || undefined;
+      const cleanToId = options.toSceneId?.replace(/^#/, "").trim() || undefined;
+      const hasCutIndex = typeof options.cutIndex === "number";
+      const hasExplicitSelector =
+        cleanFromId !== undefined || cleanToId !== undefined || hasCutIndex;
+
+      let targetCuts = cuts;
+      if (!options.applyToAllCuts) {
+        if (hasExplicitSelector) {
+          if (hasCutIndex && !Number.isFinite(options.cutIndex)) {
+            return {
+              ok: false,
+              error: `Invalid cutIndex '${String(options.cutIndex)}'.`,
+              cutId: null,
+              saveStatus: "rejected",
+              manifestPath: MANIFEST_PATH,
+              conflict: null,
+              manifest: deps.getManifest(),
+            };
+          }
+          const matched = cuts.find((c) => {
+            if (hasCutIndex && c.index !== options.cutIndex) return false;
+            if (cleanFromId !== undefined && c.fromSceneId !== cleanFromId) return false;
+            if (cleanToId !== undefined && c.toSceneId !== cleanToId) return false;
+            return true;
+          });
+          if (!matched) {
+            return {
+              ok: false,
+              error: `Scene cut not found for ${JSON.stringify({
+                fromSceneId: cleanFromId,
+                toSceneId: cleanToId,
+                cutIndex: options.cutIndex,
+              })}. Available cuts: ${cuts.map((c) => `${c.cutId} (${c.fromSceneId}->${c.toSceneId} @ ${c.cutTime}s)`).join(", ")}.`,
+              cutId: null,
+              saveStatus: "rejected",
+              manifestPath: MANIFEST_PATH,
+              conflict: null,
+              manifest: deps.getManifest(),
+            };
+          }
+          targetCuts = [matched];
+        } else {
+          targetCuts = [cuts[0]!];
+        }
+      }
 
       const dur = options.duration ?? preset.defaultDuration;
+      for (const cut of targetCuts) {
+        const maxSceneDur = Math.min(cut.fromDuration, cut.toDuration);
+        if (dur > maxSceneDur) {
+          return {
+            ok: false,
+            error: `Invalid transition duration ${dur}s for ${cut.cutId}: exceeds adjacent scene duration (${maxSceneDur}s).`,
+            cutId: cut.cutId,
+            saveStatus: "rejected",
+            manifestPath: MANIFEST_PATH,
+            conflict: null,
+            manifest: deps.getManifest(),
+          };
+        }
+      }
+
       const stylePreset = options.stylePreset ?? deps.getActiveStylePreset();
       const transitionType = (preset.id.replace("transition-", "") || "crossfade") as NonNullable<
         StudioGsapMotion["transition"]
@@ -377,11 +554,25 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
 
       let nextManifest = deps.getManifest();
       const addedTransitions: StudioGsapMotion[] = [];
+      const replacedTransitions: StudioGsapMotion[] = [];
 
       for (const cut of targetCuts) {
-        if (cut.appliedTransition?.id) {
-          nextManifest = removeStudioGsapMotionById(nextManifest, cut.appliedTransition.id);
+        const existingOnCut = nextManifest.motions.filter(
+          (m) =>
+            m.category === "transition" &&
+            (m.target.id === cut.toSceneId ||
+              m.transition?.toSceneId === cut.toSceneId ||
+              (m.transition?.fromSceneId === cut.fromSceneId &&
+                m.transition?.toSceneId === cut.toSceneId) ||
+              Math.abs((m.transition?.cutTime ?? m.start + m.duration / 2) - cut.cutTime) < 0.5),
+        );
+        for (const existing of existingOnCut) {
+          replacedTransitions.push(existing);
+          if (existing.id) {
+            nextManifest = removeStudioGsapMotionById(nextManifest, existing.id);
+          }
         }
+
         const start = Math.max(0, Number((cut.cutTime - dur / 2).toFixed(2)));
         const compiled = compileMotionPreset(preset.id, {
           start,
@@ -410,22 +601,143 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
         if (added) addedTransitions.push(added);
       }
 
+      const primaryCut = targetCuts[0]!;
+      const primaryTransition = addedTransitions[0];
       const lastAdded = addedTransitions.at(-1);
       if (lastAdded?.id) deps.setSelectedMotionId(lastAdded.id);
-      if (targetCuts[0]) deps.requestSeek(targetCuts[0].cutTime);
+      if (primaryCut) deps.requestSeek(primaryCut.cutTime);
 
-      await deps.commitManifest(nextManifest, `Agent: Apply ${preset.name} transition (${dur}s)`);
-      return { ok: true, transitions: addedTransitions, manifest: nextManifest };
+      let saveStatus: "saved" | "failed" = "saved";
+      try {
+        await deps.commitManifest(
+          nextManifest,
+          `Agent: Apply ${preset.name} transition (${dur}s) on ${primaryCut.cutId}`,
+        );
+      } catch {
+        saveStatus = "failed";
+      }
+
+      const fps = resolveFps();
+      const startTime =
+        primaryTransition?.start ?? Math.max(0, Number((primaryCut.cutTime - dur / 2).toFixed(2)));
+      const cutTime = primaryCut.cutTime;
+      const endTime = Number((startTime + dur).toFixed(2));
+      const startFrame = Math.round(startTime * fps);
+      const cutFrame = Math.round(cutTime * fps);
+      const endFrame = Math.round(endTime * fps);
+
+      const conflict: HyperFramesAgentTransitionConflict | null =
+        replacedTransitions.length > 0
+          ? {
+              hadExistingTransition: true,
+              resolution: "replaced",
+              replacedTransitionIds: replacedTransitions
+                .map((m) => m.id)
+                .filter((id): id is string => Boolean(id)),
+              replacedTransitionNames: replacedTransitions.map(
+                (m) => m.name || m.presetId || "Transition",
+              ),
+            }
+          : null;
+
+      return {
+        ok: saveStatus === "saved",
+        cutId: primaryCut.cutId,
+        fromSceneId: primaryCut.fromSceneId,
+        toSceneId: primaryCut.toSceneId,
+        fps,
+        startTime,
+        cutTime,
+        endTime,
+        duration: dur,
+        startFrame,
+        cutFrame,
+        endFrame,
+        saveStatus,
+        manifestPath: MANIFEST_PATH,
+        conflict,
+        transition: primaryTransition,
+        transitions: addedTransitions,
+        manifest: nextManifest,
+      };
     },
 
     updateMotion: async (motionId, patch) => {
       const current = deps.getManifest();
-      if (!current.motions.some((m) => m.id === motionId)) {
-        return { ok: false, error: `Motion '${motionId}' not found`, manifest: current };
+      const existing = current.motions.find((m) => m.id === motionId);
+      if (!existing) {
+        return {
+          ok: false,
+          error: `Motion '${motionId}' not found`,
+          saveStatus: "rejected",
+          manifest: current,
+        };
       }
-      const nextManifest = updateStudioGsapMotionById(current, motionId, patch);
-      await deps.commitManifest(nextManifest, `Agent: Update motion ${motionId}`);
-      return { ok: true, manifest: nextManifest };
+      if (patch.duration !== undefined) {
+        if (
+          typeof patch.duration !== "number" ||
+          !Number.isFinite(patch.duration) ||
+          patch.duration <= 0 ||
+          patch.duration > 5.0
+        ) {
+          return {
+            ok: false,
+            error: `Invalid duration '${String(patch.duration)}'. Duration must be a finite number between 0.05s and 5.0s.`,
+            saveStatus: "rejected",
+            manifest: current,
+          };
+        }
+      }
+
+      const effectivePatch: Partial<StudioElementMotionPayload> = { ...patch };
+      if (
+        existing.category === "transition" &&
+        effectivePatch.duration !== undefined &&
+        effectivePatch.start === undefined
+      ) {
+        const cutTime = existing.transition?.cutTime ?? existing.start + existing.duration / 2;
+        effectivePatch.start = Math.max(
+          0,
+          Number((cutTime - effectivePatch.duration / 2).toFixed(2)),
+        );
+      }
+
+      const nextManifest = updateStudioGsapMotionById(current, motionId, effectivePatch);
+      const updated = nextManifest.motions.find((m) => m.id === motionId);
+      let saveStatus: "saved" | "failed" = "saved";
+      try {
+        await deps.commitManifest(nextManifest, `Agent: Update motion ${motionId}`);
+      } catch {
+        saveStatus = "failed";
+      }
+
+      if (updated?.category === "transition") {
+        const fps = resolveFps();
+        const fromSceneId = updated.transition?.fromSceneId || "s01";
+        const toSceneId = updated.transition?.toSceneId || updated.target.id || "s02";
+        const cutId = `cut-${fromSceneId}-${toSceneId}`;
+        const startTime = updated.start;
+        const duration = updated.duration;
+        const cutTime =
+          updated.transition?.cutTime ?? Number((startTime + duration / 2).toFixed(2));
+        const endTime = Number((startTime + duration).toFixed(2));
+        return {
+          ok: saveStatus === "saved",
+          cutId,
+          startTime,
+          cutTime,
+          endTime,
+          duration,
+          startFrame: Math.round(startTime * fps),
+          cutFrame: Math.round(cutTime * fps),
+          endFrame: Math.round(endTime * fps),
+          saveStatus,
+          motion: updated,
+          manifest: nextManifest,
+        };
+      }
+
+      return { ok: saveStatus === "saved", saveStatus, motion: updated, manifest: nextManifest };
     },
 
     removeMotion: async (motionId) => {
@@ -437,19 +749,28 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
     removeSceneTransition: async (options) => {
       const current = deps.getManifest();
       const cuts = discoverSceneCuts();
+      const cleanFromId = options?.fromSceneId?.replace(/^#/, "").trim() || undefined;
+      const cleanToId = options?.toSceneId?.replace(/^#/, "").trim() || undefined;
       const targetCut = options
         ? cuts.find(
             (c) =>
               (typeof options.cutIndex === "number" && c.index === options.cutIndex) ||
-              (options.toSceneId && c.toSceneId === options.toSceneId.replace(/^#/, "")),
+              (cleanToId && c.toSceneId === cleanToId) ||
+              (cleanFromId && c.fromSceneId === cleanFromId),
           )
         : undefined;
 
       const toRemove = current.motions.filter((m) => {
         if (m.category !== "transition") return false;
-        if (!options?.toSceneId && typeof options?.cutIndex !== "number") return true;
-        if (targetCut && m.target.id === targetCut.toSceneId) return true;
-        if (options?.toSceneId && m.target.id === options.toSceneId.replace(/^#/, "")) return true;
+        if (!cleanToId && !cleanFromId && typeof options?.cutIndex !== "number") return true;
+        if (
+          targetCut &&
+          (m.target.id === targetCut.toSceneId || m.transition?.toSceneId === targetCut.toSceneId)
+        )
+          return true;
+        if (cleanToId && (m.target.id === cleanToId || m.transition?.toSceneId === cleanToId))
+          return true;
+        if (cleanFromId && m.transition?.fromSceneId === cleanFromId) return true;
         return false;
       });
 
@@ -457,13 +778,23 @@ export function installHyperFramesAgentBridge(deps: HyperFramesAgentBridgeDeps):
       for (const item of toRemove) {
         if (item.id) nextManifest = removeStudioGsapMotionById(nextManifest, item.id);
       }
+      let saveStatus: "saved" | "failed" = "saved";
       if (toRemove.length > 0) {
-        await deps.commitManifest(
-          nextManifest,
-          `Agent: Remove ${toRemove.length} scene transition(s)`,
-        );
+        try {
+          await deps.commitManifest(
+            nextManifest,
+            `Agent: Remove ${toRemove.length} scene transition(s)`,
+          );
+        } catch {
+          saveStatus = "failed";
+        }
       }
-      return { ok: true, removedCount: toRemove.length, manifest: nextManifest };
+      return {
+        ok: saveStatus === "saved",
+        removedCount: toRemove.length,
+        saveStatus,
+        manifest: nextManifest,
+      };
     },
 
     clearAllMotions: async () => {

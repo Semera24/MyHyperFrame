@@ -209,9 +209,53 @@ function studioMotionRenderRuntime(
     element.removeAttribute(ORIGINAL_COLOR_ATTR);
   };
 
-  const restoreStudioMotionElements = (): void => {
+  const STUDIO_TRANSITION_SCENE_ATTR = "data-hf-studio-transition-scene";
+
+  const syncSceneNominalVisibility = (sceneEl: HTMLElement, safeTime: number): void => {
+    const sceneStart = Number.parseFloat(sceneEl.getAttribute("data-start") || "0") || 0;
+    const sceneDur = Number.parseFloat(sceneEl.getAttribute("data-duration") || "3.0") || 3.0;
+    const sceneEnd = sceneStart + sceneDur;
+    const inSceneWindow = safeTime >= sceneStart && safeTime < sceneEnd - 1e-6;
+    sceneEl.style.removeProperty("opacity");
+    if (inSceneWindow) {
+      sceneEl.style.setProperty("visibility", "visible", "important");
+      sceneEl.removeAttribute("data-hf-clip-hidden");
+      const localTime = safeTime - sceneStart;
+      for (const c of Array.from(sceneEl.querySelectorAll("*"))) {
+        if (!isHTMLElement(c) || c.hasAttribute("data-hidden")) continue;
+        if (c.hasAttribute("data-start")) {
+          const cStart = Number.parseFloat(c.getAttribute("data-start") || "0") || 0;
+          const cDur =
+            Number.parseFloat(c.getAttribute("data-duration") || String(sceneDur)) || sceneDur;
+          const cInWindow = localTime >= cStart - 1e-6 && localTime < cStart + cDur + 1e-6;
+          if (cInWindow) {
+            c.removeAttribute("data-hf-clip-hidden");
+            c.style.setProperty("visibility", "visible", "important");
+          } else {
+            c.setAttribute("data-hf-clip-hidden", "");
+            c.style.setProperty("visibility", "hidden", "important");
+          }
+        } else if (c.style.visibility === "hidden") {
+          c.style.removeProperty("visibility");
+        }
+      }
+    } else {
+      sceneEl.style.setProperty("visibility", "hidden", "important");
+      sceneEl.setAttribute("data-hf-clip-hidden", "");
+    }
+  };
+
+  const restoreStudioMotionElements = (safeTime = 0): void => {
     for (const element of Array.from(document.querySelectorAll(`[${STUDIO_MOTION_ATTR}]`))) {
       if (isHTMLElement(element)) restoreElement(element);
+    }
+    for (const sceneEl of Array.from(
+      document.querySelectorAll(`[${STUDIO_TRANSITION_SCENE_ATTR}]`),
+    )) {
+      if (isHTMLElement(sceneEl)) {
+        sceneEl.removeAttribute(STUDIO_TRANSITION_SCENE_ATTR);
+        syncSceneNominalVisibility(sceneEl, safeTime);
+      }
     }
   };
 
@@ -250,18 +294,33 @@ function studioMotionRenderRuntime(
     }
   };
 
+  const getActiveMotions = (): unknown[] => {
+    const liveManifest = objectRecord(
+      (runtimeWindow as unknown as { __hfStudioMotionManifest?: unknown }).__hfStudioMotionManifest,
+    );
+    if (liveManifest && Array.isArray(liveManifest.motions)) {
+      return liveManifest.motions;
+    }
+    return manifestMotions;
+  };
+
   const applyManifest = (explicitTime?: number): number => {
+    const currentTime =
+      typeof explicitTime === "number" && Number.isFinite(explicitTime)
+        ? Math.max(0, explicitTime)
+        : readCurrentTime();
     runtimeWindow.__timelines = runtimeWindow.__timelines ?? {};
     runtimeWindow.__timelines[STUDIO_MOTION_TIMELINE_ID]?.kill?.();
     delete runtimeWindow.__timelines[STUDIO_MOTION_TIMELINE_ID];
-    restoreStudioMotionElements();
+    restoreStudioMotionElements(currentTime);
     const gsap = runtimeWindow.gsap;
-    if (!gsap?.timeline || manifestMotions.length === 0) return 0;
+    const activeMotions = getActiveMotions();
+    if (!gsap?.timeline || activeMotions.length === 0) return 0;
 
     const timeline = gsap.timeline({ paused: true, defaults: { overwrite: "auto" } });
     let applied = 0;
     const seenTargets = new Set<HTMLElement>();
-    const sortedMotions = [...manifestMotions].sort((a, b) => {
+    const sortedMotions = [...activeMotions].sort((a, b) => {
       const mA = objectRecord(a);
       const mB = objectRecord(b);
       const sA = (finiteNumber(mA?.start) ?? 0) + (finiteNumber(mA?.delay) ?? 0);
@@ -293,24 +352,36 @@ function studioMotionRenderRuntime(
         if (fromEl && toEl && typeof timeline.fromTo === "function") {
           if (!fromEl.hasAttribute(STUDIO_MOTION_ATTR)) {
             fromEl.setAttribute(ORIGINAL_OPACITY_ATTR, fromEl.style.opacity);
-            fromEl.setAttribute(ORIGINAL_VISIBILITY_ATTR, fromEl.style.visibility);
+            const fromVis =
+              fromEl.hasAttribute("data-start") || fromEl.hasAttribute("data-composition-id")
+                ? ""
+                : fromEl.style.visibility;
+            fromEl.setAttribute(ORIGINAL_VISIBILITY_ATTR, fromVis);
             fromEl.setAttribute(STUDIO_MOTION_ATTR, "true");
           }
           if (!toEl.hasAttribute(STUDIO_MOTION_ATTR)) {
             toEl.setAttribute(ORIGINAL_OPACITY_ATTR, toEl.style.opacity);
-            toEl.setAttribute(ORIGINAL_VISIBILITY_ATTR, toEl.style.visibility);
+            const toVis =
+              toEl.hasAttribute("data-start") || toEl.hasAttribute("data-composition-id")
+                ? ""
+                : toEl.style.visibility;
+            toEl.setAttribute(ORIGINAL_VISIBILITY_ATTR, toVis);
             toEl.setAttribute(STUDIO_MOTION_ATTR, "true");
           }
+          fromEl.setAttribute(STUDIO_TRANSITION_SCENE_ATTR, "true");
+          fromEl.setAttribute("data-hf-scene-no-swap", "studio-transition");
+          toEl.setAttribute(STUDIO_TRANSITION_SCENE_ATTR, "true");
+          toEl.setAttribute("data-hf-scene-no-swap", "studio-transition");
           timeline.fromTo(
             fromEl,
-            { opacity: 1, autoAlpha: 1 },
-            { opacity: 0, autoAlpha: 0, duration, ease, overwrite: "auto", immediateRender: false },
+            { opacity: 1 },
+            { opacity: 0, duration, ease, overwrite: "auto", immediateRender: false },
             effectiveStart,
           );
           timeline.fromTo(
             toEl,
-            { opacity: 0, autoAlpha: 0 },
-            { opacity: 1, autoAlpha: 1, duration, ease, overwrite: "auto", immediateRender: false },
+            { opacity: 0 },
+            { opacity: 1, duration, ease, overwrite: "auto", immediateRender: false },
             effectiveStart,
           );
           applied += 2;
@@ -322,9 +393,13 @@ function studioMotionRenderRuntime(
       const to = parseMotionValues(motion.to);
       if (!from || !to) continue;
       if (!target.hasAttribute(STUDIO_MOTION_ATTR)) {
+        const isTimed =
+          target.hasAttribute("data-start") || target.hasAttribute("data-composition-id");
+        const safeVis =
+          isTimed && target.style.visibility === "hidden" ? "" : target.style.visibility;
         target.setAttribute(ORIGINAL_TRANSFORM_ATTR, target.style.transform);
         target.setAttribute(ORIGINAL_OPACITY_ATTR, target.style.opacity);
-        target.setAttribute(ORIGINAL_VISIBILITY_ATTR, target.style.visibility);
+        target.setAttribute(ORIGINAL_VISIBILITY_ATTR, safeVis);
         target.setAttribute(ORIGINAL_CLIP_PATH_ATTR, target.style.clipPath);
         target.setAttribute(ORIGINAL_FILTER_ATTR, target.style.filter);
         target.setAttribute(ORIGINAL_BG_COLOR_ATTR, target.style.backgroundColor);
@@ -387,10 +462,6 @@ function studioMotionRenderRuntime(
     }
     runtimeWindow.__timelines[STUDIO_MOTION_TIMELINE_ID] = timeline;
     timeline.pause?.();
-    const currentTime =
-      typeof explicitTime === "number" && Number.isFinite(explicitTime)
-        ? Math.max(0, explicitTime)
-        : readCurrentTime();
     if (typeof timeline.totalTime === "function") {
       if (currentTime > 0) timeline.totalTime(0, true);
       timeline.totalTime(currentTime, false);
@@ -401,6 +472,7 @@ function studioMotionRenderRuntime(
     // -------------------------------------------------------------
     // Two-Scene Transition Compositing Pass (Both scenes visible during blend)
     // -------------------------------------------------------------
+    const heldSceneParts = new Set<string>();
     for (const motionValue of sortedMotions) {
       const motion = objectRecord(motionValue);
       if (!motion || motion.category !== "transition") continue;
@@ -411,6 +483,14 @@ function studioMotionRenderRuntime(
       const fromEl = document.getElementById(fromSceneId);
       const toEl = document.getElementById(toSceneId);
       if (!fromEl || !toEl) continue;
+
+      for (const sceneEl of [fromEl, toEl]) {
+        sceneEl.setAttribute(STUDIO_TRANSITION_SCENE_ATTR, "true");
+        sceneEl.setAttribute("data-hf-scene-no-swap", "studio-transition");
+        sceneEl.removeAttribute("data-hf-far-scene");
+        const partName = sceneEl.getAttribute("data-hf-scene-part") || sceneEl.id;
+        if (partName) heldSceneParts.add(partName);
+      }
 
       const start = finiteNumber(motion.start) ?? 0;
       const duration = finiteNumber(motion.duration) ?? 0.8;
@@ -423,14 +503,17 @@ function studioMotionRenderRuntime(
         // We are within the crossfade window: both scenes must render simultaneously!
         fromEl.style.setProperty("visibility", "visible", "important");
         fromEl.style.setProperty("display", "block", "important");
-        fromEl.removeAttribute(STUDIO_MOTION_ATTR);
         fromEl.removeAttribute("data-hf-clip-hidden");
         for (const c of Array.from(fromEl.querySelectorAll("[data-hf-clip-hidden]"))) {
           c.removeAttribute("data-hf-clip-hidden");
         }
         for (const item of Array.from(fromEl.querySelectorAll("*"))) {
-          if (isHTMLElement(item) && item.style.visibility === "hidden") {
-            item.style.removeProperty("visibility");
+          if (
+            isHTMLElement(item) &&
+            !item.hasAttribute("data-hidden") &&
+            item.style.visibility === "hidden"
+          ) {
+            item.style.setProperty("visibility", "visible", "important");
           }
         }
 
@@ -441,8 +524,12 @@ function studioMotionRenderRuntime(
           c.removeAttribute("data-hf-clip-hidden");
         }
         for (const item of Array.from(toEl.querySelectorAll("*"))) {
-          if (isHTMLElement(item) && item.style.visibility === "hidden") {
-            item.style.removeProperty("visibility");
+          if (
+            isHTMLElement(item) &&
+            !item.hasAttribute("data-hidden") &&
+            item.style.visibility === "hidden"
+          ) {
+            item.style.setProperty("visibility", "visible", "important");
           }
         }
 
@@ -460,34 +547,60 @@ function studioMotionRenderRuntime(
         // When currentTime >= cutTime, outgoing scene s01 has finished its nominal slot.
         // Clamp its internal timeline to its end duration so all cards hold their final animated state.
         if (currentTime >= cutTime) {
-          const s01Dur = finiteNumber(fromEl.getAttribute("data-duration")) ?? 3.0;
-          const s01Tl = runtimeWindow.__timelines?.[fromSceneId];
-          if (s01Tl && typeof (s01Tl as { time?: (t: number) => unknown }).time === "function") {
-            (s01Tl as { time: (t: number) => unknown }).time(s01Dur);
+          const s01Dur = Number.parseFloat(fromEl.getAttribute("data-duration") || "3.0") || 3.0;
+          const s01Tl = runtimeWindow.__timelines?.[fromSceneId] as
+            | { totalTime?: (t: number, s?: boolean) => unknown; time?: (t: number) => unknown }
+            | undefined;
+          if (typeof s01Tl?.totalTime === "function") {
+            s01Tl.totalTime(s01Dur, true);
+          } else if (typeof s01Tl?.time === "function") {
+            s01Tl.time(s01Dur);
           }
         }
 
         // When currentTime < cutTime, incoming scene s02 has not reached its nominal slot.
         // Clamp its internal timeline to 0 so all cards hold their start state while fading in.
         if (currentTime < cutTime) {
-          const s02Tl = runtimeWindow.__timelines?.[toSceneId];
-          if (s02Tl && typeof (s02Tl as { time?: (t: number) => unknown }).time === "function") {
-            (s02Tl as { time: (t: number) => unknown }).time(0);
+          const s02Tl = runtimeWindow.__timelines?.[toSceneId] as
+            | { totalTime?: (t: number, s?: boolean) => unknown; time?: (t: number) => unknown }
+            | undefined;
+          if (typeof s02Tl?.totalTime === "function") {
+            s02Tl.totalTime(0, true);
+          } else if (typeof s02Tl?.time === "function") {
+            s02Tl.time(0);
           }
         }
       } else if (currentTime < tStart) {
-        fromEl.style.removeProperty("opacity");
+        syncSceneNominalVisibility(fromEl, currentTime);
         toEl.style.setProperty("opacity", "0", "important");
+        toEl.style.setProperty("visibility", "hidden", "important");
+        toEl.setAttribute("data-hf-clip-hidden", "");
       } else if (currentTime > tEnd) {
         fromEl.style.setProperty("opacity", "0", "important");
-        toEl.style.removeProperty("opacity");
+        fromEl.style.setProperty("visibility", "hidden", "important");
+        fromEl.setAttribute("data-hf-clip-hidden", "");
+        syncSceneNominalVisibility(toEl, currentTime);
       }
+    }
+
+    const holdScenesFn = (
+      runtimeWindow as unknown as {
+        __hfHoldScenes?: (names: string[], holder?: string) => Promise<void>;
+      }
+    ).__hfHoldScenes;
+    if (typeof holdScenesFn === "function" && heldSceneParts.size > 0) {
+      void holdScenesFn([...heldSceneParts], "studio-transition");
     }
 
     return applied;
   };
 
   runtimeWindow.__hfStudioMotionApply = applyManifest;
+  (
+    runtimeWindow as unknown as { __hfStudioMotionSyncAtTime?: (time: number) => void }
+  ).__hfStudioMotionSyncAtTime = (syncTime: number) => {
+    applyManifest(syncTime);
+  };
   const WRAPPED_MOTION_SEEK_PROP = "__hfStudioMotionRenderSeekWrapped";
   const isWrapped = (fn: (time: number) => unknown): boolean =>
     Boolean((fn as unknown as Record<string, unknown>)[WRAPPED_MOTION_SEEK_PROP]);
