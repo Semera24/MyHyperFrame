@@ -106,25 +106,13 @@ export interface DomEditOverlayProps {
     selections: DomEditSelection[],
     mode: MarqueeSelectionMode,
   ) => DomSelectionResult | void;
-  /**
-   * Delete the selected canvas element.
-   * Wire to handleDomEditElementDelete from useDomEditActionsContext —
-   * same handler the Delete/Backspace hotkey uses.
-   */
+  /** Delete the selected canvas element (wire to handleDomEditElementDelete). */
   onDeleteSelection?: (selection: DomEditSelection) => void;
-  /**
-   * Called with the resolved z-order patch list and the menu action that
-   * produced it (feeds the undo coalesce key). The patch list is tie-aware and
-   * may include sibling elements (see canvasContextMenuZOrder); the live DOM is
-   * NOT yet mutated. Wire to handleDomZIndexReorderCommit from
-   * useDomEditActionsContext. See CanvasContextMenu.tsx module comment.
-   */
+  /** Resolved z-order patch list and menu action (wire to handleDomZIndexReorderCommit). */
   onApplyZIndex?: (
     selection: DomEditSelection,
     patches: ZOrderPatch[],
     action: ZOrderAction,
-    /** Sibling a forward/backward step moved past (pre-mutation render order);
-     *  null for front/back. Feeds the timeline z-mirror's crossedKey. */
     crossed: HTMLElement | null,
   ) => void;
 }
@@ -541,6 +529,9 @@ export const DomEditOverlay = memo(function DomEditOverlay({
           groupSelectionCount={groupSelections.length}
           gestures={gestures}
           onStyleCommit={onStyleCommitRef.current}
+          onRotationCommit={(angle) => {
+            void onRotationCommitRef.current(selection, { angle });
+          }}
           onBoxClick={handleBoxClick}
         />
       )}

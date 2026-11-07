@@ -439,7 +439,10 @@ export function inlineSubCompositions(
   }));
   for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
     const { element: hostEl, ancestry, scene: parentScene } = queue[queueIndex]!;
-    const src = hostEl.getAttribute("data-composition-src");
+    const src =
+      hostEl.getAttribute("data-composition-src") ||
+      hostEl.getAttribute("data-src") ||
+      hostEl.getAttribute("data-composition-file");
     if (!src) continue;
 
     const compHtml = resolveHtml(src);

@@ -28,7 +28,7 @@ import {
 import { commitWholePropertyOffset } from "./gsapWholePropertyOffsetCommit";
 import { isGestureTransactionCommit } from "./gestureTransaction";
 import { tweenReach, tweensForThisElement } from "./gsapTweenReach";
-import { resolveTweenDuration } from "../utils/globalTimeCompiler";
+import { resolveTweenDuration, resolveTweenStart } from "../utils/globalTimeCompiler";
 import { roundTo3 } from "../utils/rounding";
 import type { GsapDragCommitCallbacks } from "./gsapDragCommit";
 import { readDragStamp, type DragStamp } from "./draggedGsapPosition";
@@ -503,6 +503,58 @@ export async function tryGsapRotationIntercept(
   if (!anim || isInstantHold(anim)) {
     const existingSet =
       anim ?? findRotationSetAnimation(resolvedAnimations, selector, selection.element);
+    if (usePlayerStore.getState().autoKeyframeEnabled && time > 0.05) {
+      const template = resolvedAnimations.find((a) => !!a.keyframes);
+      const tStart = template ? (resolveTweenStart(template) ?? 0) : 0;
+      const tDur = template ? resolveTweenDuration(template) || 1 : 1;
+      const pct =
+        tDur > 0 ? Math.max(0, Math.min(100, roundTo3(((time - tStart) / tDur) * 100))) : 0;
+      if (existingSet) {
+        await commitMutation(
+          selection,
+          {
+            type: "convert-to-keyframes",
+            animationId: existingSet.id,
+            duration: roundTo3(tDur),
+          },
+          { label: "Convert rotation to keyframes", softReload: true },
+        );
+        const fresh = fetchFallbackAnimations ? await fetchFallbackAnimations() : [];
+        const freshAnim = fresh.find(
+          (a) => a.id === existingSet.id || (a.propertyGroup === "rotation" && a.keyframes),
+        );
+        if (freshAnim) {
+          return commitValueAtPlayhead(
+            selection,
+            freshAnim,
+            { rotation: newRotation },
+            iframe,
+            { commitMutation, fetchAnimations: fetchFallbackAnimations, stamp },
+            { label: "Rotate keyframe", backfill: { rotation: newRotation }, holdFromStart: true },
+          );
+        }
+      } else {
+        const keyframes =
+          pct <= 0.05
+            ? [{ percentage: 0, properties: { rotation: newRotation } }]
+            : [
+                { percentage: 0, properties: { rotation: 0, _auto: 1 } },
+                { percentage: pct, properties: { rotation: newRotation } },
+              ];
+        await commitMutation(
+          selection,
+          {
+            type: "add-with-keyframes",
+            targetSelector: selector,
+            position: roundTo3(tStart),
+            duration: roundTo3(tDur),
+            keyframes,
+          },
+          { label: "Add rotation keyframe", softReload: true },
+        );
+        return { status: "persisted" };
+      }
+    }
     await commitStaticGsapRotation(selection, newRotation, selector, existingSet, {
       commitMutation,
       fetchAnimations: fetchFallbackAnimations,

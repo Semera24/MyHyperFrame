@@ -1716,6 +1716,31 @@ export function convertToKeyframesFromScript(
   // timeline (the engine can't seek/render it). Re-root onto the timeline var
   // and add the position arg the set lacks so the converted tween is seekable.
   if (isSet && animation.global) {
+    const tlDecl = findTimelineDeclarationStatement(parsed.ast, parsed.timelineVar);
+    if (tlDecl && call.node.start < tlDecl.end) {
+      const exprStmt = findEnclosingExpressionStatement(call.ancestors);
+      const start = exprStmt ? exprStmt.start : call.node.start;
+      let end = exprStmt ? exprStmt.end : call.node.end;
+      if (script[end] === ";") end++;
+      while (script[end] === " " || script[end] === "\t") end++;
+      if (script[end] === "\r") end++;
+      if (script[end] === "\n") end++;
+      ms.remove(start, end);
+
+      const varsCode = buildKeyframesVarsCode(
+        animation,
+        fromProps,
+        toProps,
+        call.varsArg,
+        script,
+        setDuration,
+      );
+      const code = `${parsed.timelineVar}.to(${JSON.stringify(animation.targetSelector)}, ${varsCode}, 0);`;
+      const ownLineEnd = script[tlDecl.end] === "\n" ? "" : "\n";
+      ms.appendLeft(tlDecl.end, "\n" + code + ownLineEnd);
+      return ms.toString();
+    }
+
     const calleeObj = call.node.callee.object;
     if (calleeObj?.type === "Identifier") {
       ms.overwrite(calleeObj.start, calleeObj.end, parsed.timelineVar);

@@ -1,4 +1,5 @@
 import type { TimelineEditOutcome } from "../../hooks/timelineEditPermission";
+import { computeCurrentPercentage } from "../../hooks/gsapDragCommit";
 import { trackKeyframeUsage } from "../../utils/keyframeUsage";
 import { useCallback, useMemo } from "react";
 import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
@@ -378,35 +379,56 @@ export function useTimelineEditCallbacks({
       // fallow-ignore-next-line complexity
       onToggleKeyframeAtPlayhead: (el: TimelineElement) => {
         const currentTime = usePlayerStore.getState().currentTime;
-        const pct =
-          el.duration > 0
-            ? Math.max(0, Math.min(100, Math.round(((currentTime - el.start) / el.duration) * 100)))
-            : 0;
-        // Same frame for read and write: the toggled element's animations decide
-        // add-vs-remove, and its selection is what the mutation commits through.
         const animations = resolveElementAnimations(getTimelineElementIdentity(el));
         void buildDomSelectionForTimelineElement(el).then((selection) => {
           if (!selection) return;
           const anim = animations.find((a) => a.keyframes);
           if (anim?.keyframes) {
+            const tweenPct = computeCurrentPercentage(selection, anim, currentTime);
             const existing = anim.keyframes.keyframes.find(
-              (k) => Math.abs(k.percentage - pct) <= 1,
+              (k) => Math.abs(k.percentage - tweenPct) <= 1.5,
             );
             if (existing) {
               handleGsapRemoveKeyframe(anim.id, existing.percentage, undefined, selection);
             } else {
-              handleGsapAddKeyframe(anim.id, pct, "x", 0, selection);
+              const propsToSet: Record<string, number | string> = {};
+              for (const kf of anim.keyframes.keyframes) {
+                for (const key of Object.keys(kf.properties)) {
+                  if (key !== "_auto" && !(key in propsToSet)) {
+                    propsToSet[key] = kf.properties[key]!;
+                  }
+                }
+              }
+              const win = selection.element?.ownerDocument?.defaultView as unknown as {
+                gsap?: { getProperty?: (element: Element, prop: string) => unknown };
+              };
+              const gsap = win?.gsap;
+              if (gsap?.getProperty && selection.element) {
+                for (const key of Object.keys(propsToSet)) {
+                  try {
+                    const val = gsap.getProperty(selection.element, key);
+                    if (val != null) {
+                      propsToSet[key] =
+                        typeof val === "number" ? Math.round(val * 1000) / 1000 : String(val);
+                    }
+                  } catch {
+                    /* fallback to existing property value */
+                  }
+                }
+              }
+              void handleGsapAddKeyframeBatch(
+                anim.id,
+                Math.round(tweenPct * 10) / 10,
+                propsToSet,
+                undefined,
+                selection,
+              );
             }
           } else {
             const flatAnim = animations.find((a) => !a.keyframes);
             if (flatAnim) {
-              void handleGsapConvertToKeyframes(
-                flatAnim.id,
-                undefined,
-                undefined,
-                undefined,
-                selection,
-              );
+              const dur = el.duration > 0 ? el.duration : flatAnim.duration;
+              void handleGsapConvertToKeyframes(flatAnim.id, undefined, dur, undefined, selection);
             }
           }
         });

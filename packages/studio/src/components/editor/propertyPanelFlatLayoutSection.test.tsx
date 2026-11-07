@@ -68,7 +68,7 @@ describe("LayoutGeometryRows", () => {
     expect(host.textContent).toContain("Y");
     expect(host.textContent).toContain("W");
     expect(host.textContent).toContain("H");
-    expect(host.textContent).toContain("Angle");
+    expect(host.textContent).toContain("Rotation");
     expect(getFlatRowInput(host, "W").value).toBe("257.4px");
     expect(getFlatRowInput(host, "Y").value).toBe("-24px");
     act(() => root.unmount());

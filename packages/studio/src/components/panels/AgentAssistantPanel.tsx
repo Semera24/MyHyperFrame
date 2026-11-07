@@ -35,6 +35,12 @@ export interface AgentCliStatus {
   binaryPath: string | null;
   installed: boolean;
   version: string | null;
+  authenticated?: boolean;
+  authStatus?: "authenticated" | "not_signed_in" | "unknown";
+  authMessage?: string;
+  loginCmd?: string;
+  subscriptionTier?: "Unknown" | string;
+  ready?: boolean;
   defaultModel: string;
   efforts: string[];
   defaultEffort: string;
@@ -84,7 +90,7 @@ export interface AgentRunParams {
 }
 
 export interface LastRunSummary {
-  engine: AssistantEngineId;
+  engine: AssistantEngineId | "Instant Fast-Patch";
   model: string;
   sceneFile: string;
   elementId: string;
@@ -128,6 +134,7 @@ interface AgentAssistantStoreState {
   setAnthropicApiKey: (key: string) => void;
   setOpenaiApiKey: (key: string) => void;
   setGeminiApiKey: (key: string) => void;
+  clearApiKeys: () => void;
   setChatDrawerOpen: (open: boolean) => void;
   clearTerminalLogs: () => void;
   injectCanvasPinIntoAssistant: (pin: CanvasCommentPin, projectId: string) => void;
@@ -193,6 +200,7 @@ export const useAgentAssistantStore = create<AgentAssistantStoreState>()(
       setAnthropicApiKey: (anthropicApiKey) => set({ anthropicApiKey }),
       setOpenaiApiKey: (openaiApiKey) => set({ openaiApiKey }),
       setGeminiApiKey: (geminiApiKey) => set({ geminiApiKey }),
+      clearApiKeys: () => set({ anthropicApiKey: "", openaiApiKey: "", geminiApiKey: "" }),
       setChatDrawerOpen: (chatDrawerOpen) => set({ chatDrawerOpen }),
       clearTerminalLogs: () => set({ terminalLogs: [] }),
 
@@ -550,13 +558,42 @@ export const useAgentAssistantStore = create<AgentAssistantStoreState>()(
         model: state.model,
         effort: state.effort,
         selectedSkills: state.selectedSkills,
-        anthropicApiKey: state.anthropicApiKey,
-        openaiApiKey: state.openaiApiKey,
-        geminiApiKey: state.geminiApiKey,
+        // SECURITY: Never persist raw API keys in localStorage.
+        // Keys remain in-memory for the current session only.
       }),
     },
   ),
 );
+
+// Clean up any legacy plaintext API keys that may have been saved in localStorage
+if (typeof window !== "undefined") {
+  try {
+    const raw = window.localStorage.getItem("hf-agent-assistant-settings");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.state) {
+        let changed = false;
+        if ("anthropicApiKey" in parsed.state) {
+          delete parsed.state.anthropicApiKey;
+          changed = true;
+        }
+        if ("openaiApiKey" in parsed.state) {
+          delete parsed.state.openaiApiKey;
+          changed = true;
+        }
+        if ("geminiApiKey" in parsed.state) {
+          delete parsed.state.geminiApiKey;
+          changed = true;
+        }
+        if (changed) {
+          window.localStorage.setItem("hf-agent-assistant-settings", JSON.stringify(parsed));
+        }
+      }
+    }
+  } catch {
+    /* ignore storage parsing errors */
+  }
+}
 
 const CLI_AUTH_COMMANDS: Record<AssistantEngineId, { loginCmd: string; installHint: string }> = {
   claude: {
@@ -619,7 +656,6 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
     targetElementId,
     targetTimestamp,
     isRunning,
-    activeRunId,
     terminalLogs,
     lastRunStatus,
     setEngine,
@@ -726,7 +762,7 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
     return () => {
       cancelled = true;
     };
-  }, [engine]);
+  }, [engine, model, effort, setModel, setEffort]);
 
   useEffect(() => {
     if (terminalEndRef.current && terminalExpanded) {
@@ -897,24 +933,84 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
           <label className="text-[10px] font-semibold uppercase tracking-wider text-text-3">
             1. Agent CLI Engine
           </label>
-          {activeAgentInfo && (
-            <span
-              className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                activeAgentInfo.installed
-                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                  : "bg-zinc-500/15 text-zinc-400 border border-zinc-500/30"
-              }`}
-              title={activeAgentInfo.binaryPath || "CLI binary not detected on PATH"}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              data-testid="agent-recheck-btn"
+              onClick={fetchAgentsAndSkills}
+              className="px-2 py-0.5 rounded bg-bg-2 hover:bg-bg-3 border border-border text-[10px] text-text-2 hover:text-text-1 transition-colors"
+              title="Re-probe local CLI installation and auth state"
             >
-              <span>{activeAgentInfo.installed ? "●" : "○"}</span>
-              <span>
-                {activeAgentInfo.installed
-                  ? `Installed (${activeAgentInfo.version || activeAgentInfo.binary})`
-                  : `${activeAgentInfo.binary} not on PATH`}
-              </span>
-            </span>
-          )}
+              ↻ Re-check
+            </button>
+          </div>
         </div>
+
+        {/* Tri-State Status Indicators: Installed, Auth, Ready */}
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+          {/* 1. Installed State */}
+          <span
+            data-testid="agent-status-installed"
+            className={`inline-flex items-center gap-1 font-mono px-2 py-0.5 rounded border ${
+              activeAgentInfo?.installed
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+            }`}
+            title={activeAgentInfo?.binaryPath || "Binary not found on PATH"}
+          >
+            <span>{activeAgentInfo?.installed ? "●" : "○"}</span>
+            <span>
+              {activeAgentInfo?.installed
+                ? `Installed (${activeAgentInfo.version || activeAgentInfo.binary})`
+                : `${activeAgentInfo?.binary || engine} not on PATH`}
+            </span>
+          </span>
+
+          {/* 2. Authentication State */}
+          <span
+            data-testid="agent-status-auth"
+            className={`inline-flex items-center gap-1 font-mono px-2 py-0.5 rounded border ${
+              activeEngineApiKey
+                ? "bg-sky-500/15 text-sky-300 border-sky-500/30"
+                : activeAgentInfo?.authenticated
+                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                  : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+            }`}
+            title={activeAgentInfo?.authMessage || "Authentication status"}
+          >
+            <span>{activeEngineApiKey || activeAgentInfo?.authenticated ? "●" : "○"}</span>
+            <span>
+              {activeEngineApiKey
+                ? "Custom API Key (Session-Only)"
+                : activeAgentInfo?.authenticated
+                  ? "Local CLI Session Authenticated"
+                  : "Not Signed In"}
+            </span>
+          </span>
+
+          {/* 3. Ready State */}
+          <span
+            data-testid="agent-status-ready"
+            className={`inline-flex items-center gap-1 font-mono px-2 py-0.5 rounded border ${
+              activeAgentInfo?.installed && (activeAgentInfo?.authenticated || activeEngineApiKey)
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                : "bg-rose-500/15 text-rose-300 border-rose-500/30"
+            }`}
+          >
+            <span>
+              {activeAgentInfo?.installed && (activeAgentInfo?.authenticated || activeEngineApiKey)
+                ? "●"
+                : "○"}
+            </span>
+            <span>
+              {activeAgentInfo?.installed && (activeAgentInfo?.authenticated || activeEngineApiKey)
+                ? "Ready to Run"
+                : "Setup Required"}
+            </span>
+          </span>
+        </div>
+
+        {/* Agent Engine Buttons */}
         <div className="grid grid-cols-3 gap-1">
           {(agents.length > 0
             ? agents
@@ -926,6 +1022,12 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
                   binaryPath: null,
                   installed: true,
                   version: null,
+                  authenticated: true,
+                  authStatus: "authenticated",
+                  authMessage: "Local CLI session",
+                  loginCmd: "claude auth login",
+                  subscriptionTier: "Unknown",
+                  ready: true,
                   defaultModel: "claude-opus-5-5",
                   efforts: ["low", "medium", "high", "max"],
                   defaultEffort: "high",
@@ -937,6 +1039,12 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
                   binaryPath: null,
                   installed: true,
                   version: null,
+                  authenticated: true,
+                  authStatus: "authenticated",
+                  authMessage: "Local CLI session",
+                  loginCmd: "codex login",
+                  subscriptionTier: "Unknown",
+                  ready: true,
                   defaultModel: "gpt-5.6-luna",
                   efforts: ["low", "medium", "high", "xhigh", "max"],
                   defaultEffort: "medium",
@@ -948,6 +1056,12 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
                   binaryPath: null,
                   installed: true,
                   version: null,
+                  authenticated: true,
+                  authStatus: "authenticated",
+                  authMessage: "Local CLI session",
+                  loginCmd: "agy auth login",
+                  subscriptionTier: "Unknown",
+                  ready: true,
                   defaultModel: "gemini-4-argon-medium",
                   efforts: ["low", "medium", "high", "max"],
                   defaultEffort: "medium",
@@ -969,9 +1083,15 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
               >
                 <span
                   className={
-                    ag.installed ? "text-emerald-400 text-[10px]" : "text-zinc-500 text-[10px]"
+                    ag.installed && ag.authenticated !== false
+                      ? "text-emerald-400 text-[10px]"
+                      : ag.installed
+                        ? "text-amber-400 text-[10px]"
+                        : "text-zinc-500 text-[10px]"
                   }
-                  title={ag.installed ? `Installed: ${ag.binaryPath}` : "Not installed"}
+                  title={
+                    ag.installed ? `Installed: ${ag.binaryPath || ag.binary}` : "Not installed"
+                  }
                 >
                   ●
                 </span>
@@ -980,6 +1100,87 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
             );
           })}
         </div>
+
+        {/* Overview Details: Selected Agent, Model, Effort, Billing Source, Subscription Tier */}
+        <div
+          data-testid="agent-details-summary"
+          className="rounded border border-border bg-bg-2/50 p-2 text-[10.5px] flex flex-col gap-1"
+        >
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+            <div>
+              <span className="text-text-4">Selected Agent: </span>
+              <span className="font-mono text-text-1 font-medium">
+                {activeAgentInfo?.label || engine} ({activeAgentInfo?.binary || engine})
+              </span>
+            </div>
+            <div>
+              <span className="text-text-4">Selected Model: </span>
+              <span className="font-mono text-emerald-300 font-medium">{model}</span>
+            </div>
+            <div>
+              <span className="text-text-4">Effort Level: </span>
+              <span className="font-mono text-text-2">{effort}</span>
+            </div>
+            <div>
+              <span className="text-text-4">Billing Source: </span>
+              <span className="font-medium text-text-1">
+                {activeEngineApiKey ? "Custom API Key (Session-Only)" : "Local CLI Session"}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
+            <div className="flex items-center gap-1.5 text-text-3">
+              <span>Local Subscription Tier:</span>
+              <span className="font-mono text-amber-300 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">
+                Unknown
+              </span>
+              <span className="text-text-4 text-[9.5px]">
+                (Unverified offline · do not assume Plus/Pro)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Actionable Login Command Warning when not signed in or not installed */}
+        {(!activeAgentInfo?.installed ||
+          (!activeAgentInfo?.authenticated && !activeEngineApiKey)) && (
+          <div className="flex flex-col gap-1.5 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-200">
+            <div className="font-semibold flex items-center justify-between">
+              <span>
+                {!activeAgentInfo?.installed
+                  ? `⚠️ ${activeAgentInfo?.label || engine} CLI is not installed on PATH`
+                  : `⚠️ ${activeAgentInfo?.label || engine} is not signed in`}
+              </span>
+              <span className="text-[9.5px] text-amber-300/80">Action Required</span>
+            </div>
+            <p className="text-[10px] text-text-3">
+              {!activeAgentInfo?.installed
+                ? `Install the CLI globally or provide a temporary custom API key below.`
+                : `Run the terminal login command below, or click 'Enter Custom API Key' to use a session key:`}
+            </p>
+            <div className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-zinc-950 border border-amber-500/40 font-mono text-[10px] text-amber-200">
+              <code className="truncate">
+                {activeAgentInfo?.loginCmd ||
+                  CLI_AUTH_COMMANDS[engine]?.loginCmd ||
+                  `${activeAgentInfo?.binary || engine} login`}
+              </code>
+              <button
+                type="button"
+                data-testid="agent-copy-login-cmd"
+                onClick={() =>
+                  void handleCopyAuthCmd(
+                    activeAgentInfo?.loginCmd ||
+                      CLI_AUTH_COMMANDS[engine]?.loginCmd ||
+                      `${activeAgentInfo?.binary || engine} login`,
+                  )
+                }
+                className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[9.5px] shrink-0 font-sans"
+              >
+                {copiedAuthCmd ? "✓ Copied" : "Copy Command"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Collapsible ⚙️ Auth & API Keys Section */}
         <div
@@ -993,7 +1194,7 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
               className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-2 hover:text-text-1"
             >
               <span>{authExpanded ? "▾" : "▸"}</span>
-              <span>⚙️ Auth &amp; API Keys</span>
+              <span>⚙️ Auth &amp; Custom API Keys (Optional)</span>
             </button>
             <button
               type="button"
@@ -1005,51 +1206,21 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
             </button>
           </div>
 
-          <div className="flex items-center justify-between gap-2 text-[10px]">
-            {activeAgentInfo && !activeAgentInfo.installed ? (
-              <span className="inline-flex items-center gap-1 text-amber-300 font-medium">
-                <span>○</span>
-                <span>
-                  {activeAgentInfo.label} CLI not installed — run terminal login below or use Copy
-                  Prompt
-                </span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-emerald-300 font-medium">
-                <span>●</span>
-                <span>
-                  Authenticated via local CLI session
-                  {activeEngineApiKey ? " + Custom API Key active" : ""}
-                </span>
-              </span>
-            )}
-          </div>
-
-          {activeAgentInfo && !activeAgentInfo.installed && (
-            <div className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-zinc-950 border border-amber-500/30 font-mono text-[10px] text-amber-200">
-              <code className="truncate">
-                {CLI_AUTH_COMMANDS[engine]?.loginCmd || `${activeAgentInfo.binary} login`}
-              </code>
-              <button
-                type="button"
-                onClick={() =>
-                  void handleCopyAuthCmd(
-                    CLI_AUTH_COMMANDS[engine]?.loginCmd || `${activeAgentInfo.binary} login`,
-                  )
-                }
-                className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[9.5px] shrink-0"
-              >
-                {copiedAuthCmd ? "✓ Copied" : "Copy"}
-              </button>
-            </div>
-          )}
-
           {authExpanded && (
             <div className="flex flex-col gap-2 pt-1.5 border-t border-border/70">
+              {/* Safe Session-Only Banner */}
+              <div className="p-1.5 rounded bg-sky-500/10 border border-sky-500/25 text-[10px] text-sky-200 flex items-start gap-1.5">
+                <span className="shrink-0">🔒</span>
+                <span>
+                  <strong>Safe In-Memory Session Storage:</strong> API keys entered below are held
+                  in memory for this browser session only and are <em>never</em> saved to
+                  localStorage, cookies, or unencrypted files.
+                </span>
+              </div>
+
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-text-4">
-                  Optional overrides injected into spawned CLI subprocesses (persisted in
-                  localStorage):
+                  Session-only overrides injected into spawned CLI subprocesses:
                 </span>
                 <button
                   type="button"
@@ -1064,7 +1235,7 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
                 <label className="text-[10px] font-medium text-text-3 flex items-center justify-between">
                   <span>Anthropic API Key (Claude · ANTHROPIC_API_KEY)</span>
                   {anthropicApiKey.trim() && (
-                    <span className="text-[9px] text-emerald-400 font-mono">✓ Set</span>
+                    <span className="text-[9px] text-emerald-400 font-mono">✓ Set (In-Memory)</span>
                   )}
                 </label>
                 <input
@@ -1082,7 +1253,7 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
                 <label className="text-[10px] font-medium text-text-3 flex items-center justify-between">
                   <span>OpenAI API Key (Codex · OPENAI_API_KEY)</span>
                   {openaiApiKey.trim() && (
-                    <span className="text-[9px] text-emerald-400 font-mono">✓ Set</span>
+                    <span className="text-[9px] text-emerald-400 font-mono">✓ Set (In-Memory)</span>
                   )}
                 </label>
                 <input
@@ -1100,7 +1271,7 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
                 <label className="text-[10px] font-medium text-text-3 flex items-center justify-between">
                   <span>Gemini API Key (Antigravity · GEMINI_API_KEY)</span>
                   {geminiApiKey.trim() && (
-                    <span className="text-[9px] text-emerald-400 font-mono">✓ Set</span>
+                    <span className="text-[9px] text-emerald-400 font-mono">✓ Set (In-Memory)</span>
                   )}
                 </label>
                 <input
@@ -1116,15 +1287,19 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
 
               <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50 text-[10px]">
                 <div className="flex items-center gap-1.5 min-w-0 font-mono text-text-3">
-                  <span className="text-text-4 shrink-0">Terminal Auth:</span>
+                  <span className="text-text-4 shrink-0">Terminal Login:</span>
                   <code className="px-1.5 py-0.5 rounded bg-zinc-950 border border-border text-emerald-300 truncate">
-                    {CLI_AUTH_COMMANDS[engine]?.loginCmd || "claude auth login"}
+                    {activeAgentInfo?.loginCmd ||
+                      CLI_AUTH_COMMANDS[engine]?.loginCmd ||
+                      "claude auth login"}
                   </code>
                   <button
                     type="button"
                     onClick={() =>
                       void handleCopyAuthCmd(
-                        CLI_AUTH_COMMANDS[engine]?.loginCmd || "claude auth login",
+                        activeAgentInfo?.loginCmd ||
+                          CLI_AUTH_COMMANDS[engine]?.loginCmd ||
+                          "claude auth login",
                       )
                     }
                     className="px-1.5 py-0.5 rounded bg-surface hover:bg-bg-3 border border-border text-[9.5px] text-text-2 shrink-0"
@@ -1135,6 +1310,7 @@ export const AgentAssistantPanel = memo(function AgentAssistantPanel({
                 {(anthropicApiKey || openaiApiKey || geminiApiKey) && (
                   <button
                     type="button"
+                    data-testid="agent-clear-api-keys"
                     onClick={() => {
                       setAnthropicApiKey("");
                       setOpenaiApiKey("");

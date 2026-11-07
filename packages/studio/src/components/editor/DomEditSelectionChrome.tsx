@@ -138,6 +138,7 @@ interface DomEditSelectionChromeProps {
   groupSelectionCount: number;
   gestures: GestureHandlers;
   onStyleCommit?: (property: string, value: string) => Promise<unknown> | void;
+  onRotationCommit?: (angle: number) => void;
   onBoxClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   /** The canvas' text-editing session: what opens one, and whether one is open. */
   inlineText?: {
@@ -166,6 +167,7 @@ export function DomEditSelectionChrome({
   groupSelectionCount,
   gestures,
   onStyleCommit,
+  onRotationCommit,
   onBoxClick,
   inlineText,
 }: DomEditSelectionChromeProps) {
@@ -197,6 +199,7 @@ export function DomEditSelectionChrome({
               e.stopPropagation();
               gestures.startGesture("rotate", e);
             }}
+            onCommitRotation={onRotationCommit}
           />
         )}
         <div

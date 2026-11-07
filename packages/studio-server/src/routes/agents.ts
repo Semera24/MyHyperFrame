@@ -35,6 +35,12 @@ export interface AgentCliInfo {
   binaryPath: string | null;
   installed: boolean;
   version: string | null;
+  authenticated: boolean;
+  authStatus: "authenticated" | "not_signed_in" | "unknown";
+  authMessage: string;
+  loginCmd: string;
+  subscriptionTier: "Unknown";
+  ready: boolean;
   defaultModel: string;
   efforts: string[];
   defaultEffort: string;
@@ -291,6 +297,148 @@ function probeBinaryVersion(binaryPath: string | null): string | null {
     return firstLine ? firstLine.slice(0, 80) : "installed";
   } catch {
     return "installed";
+  }
+}
+
+function probeCliAuth(
+  id: AgentEngineId,
+  installed: boolean,
+): {
+  authenticated: boolean;
+  authStatus: "authenticated" | "not_signed_in" | "unknown";
+  authMessage: string;
+  loginCmd: string;
+  subscriptionTier: "Unknown";
+} {
+  const home = homedir();
+  switch (id) {
+    case "claude": {
+      const loginCmd = "claude auth login";
+      if (!installed) {
+        return {
+          authenticated: false,
+          authStatus: "not_signed_in",
+          authMessage: "claude CLI not installed on PATH",
+          loginCmd,
+          subscriptionTier: "Unknown",
+        };
+      }
+      const claudeJson = join(home, ".claude.json");
+      const claudeDir = join(home, ".claude");
+      const hasAuth =
+        (existsSync(claudeJson) && statSync(claudeJson).size > 10) ||
+        (existsSync(claudeDir) && statSync(claudeDir).isDirectory()) ||
+        Boolean(process.env.ANTHROPIC_API_KEY);
+      return {
+        authenticated: hasAuth,
+        authStatus: hasAuth ? "authenticated" : "not_signed_in",
+        authMessage: hasAuth
+          ? "Local CLI session detected (~/.claude.json)"
+          : "Not signed in. Run 'claude auth login' in terminal.",
+        loginCmd,
+        subscriptionTier: "Unknown",
+      };
+    }
+    case "codex": {
+      const loginCmd = "codex login";
+      if (!installed) {
+        return {
+          authenticated: false,
+          authStatus: "not_signed_in",
+          authMessage: "codex CLI not installed on PATH",
+          loginCmd,
+          subscriptionTier: "Unknown",
+        };
+      }
+      const authJson = join(home, ".codex", "auth.json");
+      const hasAuth =
+        (existsSync(authJson) && statSync(authJson).size > 10) ||
+        Boolean(process.env.OPENAI_API_KEY);
+      return {
+        authenticated: hasAuth,
+        authStatus: hasAuth ? "authenticated" : "not_signed_in",
+        authMessage: hasAuth
+          ? "Local CLI session detected (~/.codex/auth.json)"
+          : "Not signed in. Run 'codex login' in terminal.",
+        loginCmd,
+        subscriptionTier: "Unknown",
+      };
+    }
+    case "agy": {
+      const loginCmd = "agy auth login";
+      if (!installed) {
+        return {
+          authenticated: false,
+          authStatus: "not_signed_in",
+          authMessage: "agy CLI not installed on PATH",
+          loginCmd,
+          subscriptionTier: "Unknown",
+        };
+      }
+      const oauthJson = join(home, ".gemini", "oauth_creds.json");
+      const jetski = join(home, ".gemini", "jetski-standalone-oauth-token");
+      const hasAuth =
+        existsSync(oauthJson) ||
+        existsSync(jetski) ||
+        Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+      return {
+        authenticated: hasAuth,
+        authStatus: hasAuth ? "authenticated" : "not_signed_in",
+        authMessage: hasAuth
+          ? "Local CLI session detected (~/.gemini/)"
+          : "Not signed in. Run 'agy auth login' in terminal.",
+        loginCmd,
+        subscriptionTier: "Unknown",
+      };
+    }
+    case "grok": {
+      const loginCmd = "grok login";
+      if (!installed) {
+        return {
+          authenticated: false,
+          authStatus: "not_signed_in",
+          authMessage: "grok CLI not installed on PATH",
+          loginCmd,
+          subscriptionTier: "Unknown",
+        };
+      }
+      const grokDir = join(home, ".grok");
+      const hasAuth = existsSync(grokDir) || Boolean(process.env.XAI_API_KEY);
+      return {
+        authenticated: hasAuth,
+        authStatus: hasAuth ? "authenticated" : "not_signed_in",
+        authMessage: hasAuth
+          ? "Local CLI session detected (~/.grok)"
+          : "Not signed in. Run 'grok login' in terminal.",
+        loginCmd,
+        subscriptionTier: "Unknown",
+      };
+    }
+    case "opencode": {
+      const loginCmd = "opencode auth login";
+      if (!installed) {
+        return {
+          authenticated: false,
+          authStatus: "not_signed_in",
+          authMessage: "opencode CLI not installed on PATH",
+          loginCmd,
+          subscriptionTier: "Unknown",
+        };
+      }
+      const opencodeDir = join(home, ".config", "opencode");
+      const hasAuth =
+        existsSync(opencodeDir) ||
+        Boolean(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY);
+      return {
+        authenticated: hasAuth,
+        authStatus: hasAuth ? "authenticated" : "not_signed_in",
+        authMessage: hasAuth
+          ? "Local CLI session detected (~/.config/opencode)"
+          : "Not signed in. Run 'opencode auth login' in terminal.",
+        loginCmd,
+        subscriptionTier: "Unknown",
+      };
+    }
   }
 }
 
@@ -723,6 +871,7 @@ export function registerAgentRoutes(api: Hono, adapter: StudioApiAdapter): void 
       const binaryPath = findCliBinary(spec.binary);
       const installed = binaryPath !== null;
       const version = installed ? probeBinaryVersion(binaryPath) : null;
+      const auth = probeCliAuth(id, installed);
       return {
         id,
         label: spec.label,
@@ -730,6 +879,12 @@ export function registerAgentRoutes(api: Hono, adapter: StudioApiAdapter): void 
         binaryPath,
         installed,
         version,
+        authenticated: auth.authenticated,
+        authStatus: auth.authStatus,
+        authMessage: auth.authMessage,
+        loginCmd: auth.loginCmd,
+        subscriptionTier: auth.subscriptionTier,
+        ready: installed && auth.authenticated,
         defaultModel: spec.defaultModel,
         efforts: spec.efforts,
         defaultEffort: spec.defaultEffort,

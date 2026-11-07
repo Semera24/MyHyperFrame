@@ -522,7 +522,12 @@ export type BundledHostCompositionIdentity = {
 };
 
 function getBundledHostCompositionIdentity(host: Element): BundledHostCompositionIdentity {
-  const currentCompositionId = (host.getAttribute("data-composition-id") || "").trim() || null;
+  const currentCompositionId =
+    (
+      host.getAttribute("data-composition-id") ||
+      host.getAttribute("data-composition") ||
+      ""
+    ).trim() || null;
   const authoredCompositionId =
     (host.getAttribute("data-hf-original-composition-id") || currentCompositionId || "").trim() ||
     null;
@@ -534,10 +539,17 @@ function getBundledHostCompositionIdentity(host: Element): BundledHostCompositio
 
 function getBundledTrackedCompositionHosts(document: Document): Element[] {
   const hosts = Array.from(
-    document.querySelectorAll<Element>("[data-composition-src], [data-composition-id]"),
+    document.querySelectorAll<Element>(
+      "[data-composition-src], [data-composition-id], [data-src], [data-composition]",
+    ),
   );
   return hosts.filter((host) => {
-    if (host.hasAttribute("data-composition-src")) return true;
+    if (
+      host.hasAttribute("data-composition-src") ||
+      host.hasAttribute("data-src") ||
+      host.hasAttribute("data-composition-file")
+    )
+      return true;
     const authoredCompositionId = getBundledHostCompositionIdentity(host).authoredCompositionId;
     if (!authoredCompositionId) return false;
     return !!document.getElementById(`${authoredCompositionId}-template`);
@@ -545,7 +557,12 @@ function getBundledTrackedCompositionHosts(document: Document): Element[] {
 }
 
 function shouldAssignBundledRuntimeCompositionId(host: Element, document: Document): boolean {
-  if (host.hasAttribute("data-composition-src")) return true;
+  if (
+    host.hasAttribute("data-composition-src") ||
+    host.hasAttribute("data-src") ||
+    host.hasAttribute("data-composition-file")
+  )
+    return true;
   const authoredCompositionId = getBundledHostCompositionIdentity(host).authoredCompositionId;
   if (!authoredCompositionId) return false;
   if (!document.getElementById(`${authoredCompositionId}-template`)) return false;
@@ -1159,8 +1176,11 @@ async function bundleProject(projectDir: string, options?: BundleOptions): Promi
   // Inline sub-compositions (via shared function)
   const trackedCompositionHosts = getBundledTrackedCompositionHosts(document);
   const hostIdentityByElement = assignBundledRuntimeCompositionIds(trackedCompositionHosts);
-  const subCompositionHosts = trackedCompositionHosts.filter((host) =>
-    host.hasAttribute("data-composition-src"),
+  const subCompositionHosts = trackedCompositionHosts.filter(
+    (host) =>
+      host.hasAttribute("data-composition-src") ||
+      host.hasAttribute("data-src") ||
+      host.hasAttribute("data-composition-file"),
   );
   const sceneSources = new Map<string, string | null>();
   const subCompResult = inlineSubCompositions(document, subCompositionHosts, {
@@ -1253,7 +1273,12 @@ async function bundleProject(projectDir: string, options?: BundleOptions): Promi
   // Inline template compositions: inject <template id="X-template"> content into
   // matching empty host elements with data-composition-id="X" (no data-composition-src)
   const candidateInlineHosts = trackedCompositionHosts.filter(
-    (host) => !host.hasAttribute("data-composition-src"),
+    (host) =>
+      !(
+        host.hasAttribute("data-composition-src") ||
+        host.hasAttribute("data-src") ||
+        host.hasAttribute("data-composition-file")
+      ),
   );
   for (const templateEl of [...document.querySelectorAll("template[id]")]) {
     const templateId = templateEl.getAttribute("id") || "";

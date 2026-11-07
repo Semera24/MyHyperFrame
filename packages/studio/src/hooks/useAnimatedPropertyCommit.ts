@@ -46,6 +46,13 @@ interface CommitAnimatedPropertyDeps {
   bumpGsapCache: () => void;
 }
 
+function animationWritesProperty(a: GsapAnimation, property: string): boolean {
+  if (property in (a.properties ?? {})) return true;
+  if (a.fromProperties && property in a.fromProperties) return true;
+  if (a.keyframes?.keyframes.some((k) => property in k.properties)) return true;
+  return false;
+}
+
 function pickBestAnimation(
   animations: GsapAnimation[],
   selector: string | null,
@@ -56,20 +63,25 @@ function pickBestAnimation(
   // `animations.length <= 1` early return merged a rotation/3D edit into the element's
   // only tween even when that was a `position` tween — contaminating it and leaving the
   // new property with no clean keyframe baseline. When a target group is known, only
-  // same-group tweens are candidates; if none exist we return undefined and the caller
-  // creates a fresh same-group tween.
+  // same-group tweens or tweens already animating that property are candidates; if none
+  // exist we return undefined and the caller creates a fresh same-group tween.
   const candidates =
     targetGroup !== undefined
-      ? animations.filter((a) => a.propertyGroup === targetGroup)
+      ? animations.filter(
+          (a) =>
+            a.propertyGroup === targetGroup ||
+            (property ? animationWritesProperty(a, property) : false),
+        )
       : animations;
   if (candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
   const currentTime = usePlayerStore.getState().currentTime;
-  // Intentional multi-signal ranking: group match, selector specificity, and playhead overlap.
+  // Intentional multi-signal ranking: group match, property ownership, selector specificity, and playhead overlap.
   // fallow-ignore-next-line complexity
   const scored = candidates.map((a) => {
     let score = 0;
     if (a.keyframes) score += 10;
+    if (property && animationWritesProperty(a, property)) score += 8;
     if (selector && a.targetSelector === selector) score += 5;
     else if (a.targetSelector.includes(",")) score -= 3;
     const pos = a.resolvedStart ?? (typeof a.position === "number" ? a.position : 0);
@@ -396,8 +408,9 @@ async function commitKeyframeProps(
     return;
   }
 
-  const pct = computeElementPercentage(ct, selection, anim);
-  const existingKf = anim.keyframes?.keyframes.some((kf) => Math.abs(kf.percentage - pct) < 0.05);
+  const activeKeyframePct = usePlayerStore.getState().activeKeyframePct;
+  const pct = activeKeyframePct ?? computeElementPercentage(ct, selection, anim);
+  const existingKf = anim.keyframes?.keyframes.some((kf) => Math.abs(kf.percentage - pct) <= 1.5);
   // Rebuild the live keyframe tween in place so the edit shows instantly (no flash);
   // rebuildKeyframeTween declines → soft reload if the tween can't be safely rebuilt.
   const numericProps: Record<string, number> = {};
@@ -525,18 +538,26 @@ export function useAnimatedPropertyCommit(deps: CommitAnimatedPropertyDeps) {
           return;
         }
 
-        // Existing static hold on an otherwise animated element — merge the props
-        // into the same write, then auto-keyframe it against the sibling tween.
+        // Existing static hold on an otherwise animated element:
+        // When auto-keyframing is enabled and currentTime > 0.05, convert or create a keyframed tween
+        // at the playhead so subsequent edits interpolate instead of staying stuck at a static hold.
         if (anim && isInstantHold(anim)) {
-          await commitSetProps(
-            selection,
-            anim,
-            propEntries,
-            selector,
-            selectedGsapAnimations,
-            commit,
-          );
-          return;
+          if (
+            usePlayerStore.getState().autoKeyframeEnabled &&
+            usePlayerStore.getState().currentTime > 0.05
+          ) {
+            // Fall through to create fresh same-group keyframed tween at playhead below
+          } else {
+            await commitSetProps(
+              selection,
+              anim,
+              propEntries,
+              selector,
+              selectedGsapAnimations,
+              commit,
+            );
+            return;
+          }
         }
 
         // Animated element but NO same-group tween exists (e.g. the FIRST rotation/3D

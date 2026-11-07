@@ -173,7 +173,7 @@ export function LayoutGeometryRows({
         suffix={<KeyframeGutter property="height" displayValue={displayH} {...gutterProps} />}
       />
       <FlatRow
-        label="Angle"
+        label="Rotation"
         value={`${displayR}°`}
         tier="default"
         disabled={manualRotationEditingDisabled}
