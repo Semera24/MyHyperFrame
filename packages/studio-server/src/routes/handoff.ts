@@ -259,9 +259,14 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
     if (existsSync(sourcesIndex)) {
       try {
         const html = readFileSync(sourcesIndex, "utf-8");
-        const rootDurMatch = html.match(/id=["']root["'][^>]*data-duration=["']([0-9.]+)["']/);
-        if (rootDurMatch) {
-          const tDur = Number.parseFloat(rootDurMatch[1]!);
+        const rootTagMatch = html.match(
+          /<[^>]*\b(?:id=["'](?:root|master-stage)["']|data-hf-id=["']hf-root["']|data-composition-id=["'](?:main|root)["'])[^>]*>/i,
+        );
+        const durMatch = rootTagMatch
+          ? rootTagMatch[0].match(/\bdata-duration=["']([0-9.]+)["']/i)
+          : html.match(/\bdata-duration=["']([0-9.]+)["']/i);
+        if (durMatch) {
+          const tDur = Number.parseFloat(durMatch[1]!);
           data.audio.timelineDurationSeconds = tDur;
           if (data.audio.durationSeconds) {
             const diff = Math.abs(tDur - data.audio.durationSeconds);
@@ -621,30 +626,119 @@ export function registerHandoffRoutes(api: Hono, adapter: StudioApiAdapter): voi
       return c.json({ ok: false, error: "No narration audio found in Audio/" }, 400);
     }
 
-    const probe = inspectAudioWithFfprobe(join(audioDir, audioFiles[0]!));
+    const audioFile = audioFiles[0]!;
+    const audioPath = join(audioDir, audioFile);
+    const probe = inspectAudioWithFfprobe(audioPath);
     if (!probe || !probe.durationSeconds) {
       return c.json({ ok: false, error: "Failed to read audio duration via ffprobe" }, 500);
     }
 
-    const exactDuration = probe.durationSeconds.toFixed(3);
+    // Determine project FPS (from Timing/*.json or default to 30)
+    let fps = 30;
+    const timingDir = join(epRoot, "Timing");
+    if (existsSync(timingDir)) {
+      try {
+        const timingFile = readdirSync(timingDir).find((f) => f.endsWith(".json"));
+        if (timingFile) {
+          const tc = JSON.parse(readFileSync(join(timingDir, timingFile), "utf-8")) as {
+            fps?: number;
+          };
+          if (typeof tc.fps === "number" && tc.fps > 0) fps = tc.fps;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Compute whole frame ceiling duration at project fps
+    const rawAudioDuration = probe.durationSeconds;
+    const ceilingFrames = Math.ceil(rawAudioDuration * fps);
+    const frameAlignedSeconds = ceilingFrames / fps;
+    const exactDuration = frameAlignedSeconds.toFixed(3);
 
     try {
       let html = readFileSync(sourcesIndex, "utf-8");
-      // Update root data-duration
+
+      // Also ensure audio file is mirrored into Sources/assets/ if assets/ exists
+      const assetsDir = join(epRoot, "Sources", "assets");
+      const targetAssetAudio = join(assetsDir, audioFile);
+      if (existsSync(assetsDir) && !existsSync(targetAssetAudio)) {
+        try {
+          copyFileSync(audioPath, targetAssetAudio);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      // Update root data-duration (supports id="root", id="master-stage", data-hf-id="hf-root")
+      const rootTagPattern =
+        /(<[^>]*\b(?:id=["'](?:root|master-stage)["']|data-hf-id=["']hf-root["'])[^>]*\bdata-duration=["'])[0-9.]+([^>]*["'])/i;
+      const rootTagPatternReverse =
+        /(<div\b[^>]*\bdata-duration=["'])[0-9.]+([^>]*\b(?:id=["'](?:root|master-stage)["']|data-hf-id=["']hf-root["'])[^>]*>)/i;
+      if (rootTagPattern.test(html)) {
+        html = html.replace(rootTagPattern, `$1${exactDuration}$2`);
+      } else if (rootTagPatternReverse.test(html)) {
+        html = html.replace(rootTagPatternReverse, `$1${exactDuration}$2`);
+      } else {
+        html = html.replace(/(data-duration=["'])[0-9.]+(["'])/i, `$1${exactDuration}$2`);
+      }
+
+      // Update or insert narration audio element
+      const narrationAudioRegex =
+        /(<audio[^>]*\bid=["']narration["'][^>]*\bdata-duration=["'])[0-9.]+([^>]*["'])/i;
+      const narrationAudioBeforeRegex =
+        /(<audio[^>]*\bdata-duration=["'])[0-9.]+([^>]*\bid=["']narration["'][^>]*>)/i;
+      if (narrationAudioRegex.test(html)) {
+        html = html.replace(narrationAudioRegex, `$1${exactDuration}$2`);
+      } else if (narrationAudioBeforeRegex.test(html)) {
+        html = html.replace(narrationAudioBeforeRegex, `$1${exactDuration}$2`);
+      } else {
+        // If no <audio id="narration"> exists, insert one right inside the root container
+        const audioTag = `<audio data-hf-id="hf-narration" id="narration" data-start="0" data-duration="${exactDuration}" data-track-index="0" data-volume="1" src="assets/${audioFile}"></audio>`;
+        html = html.replace(
+          /(<div\b[^>]*\b(?:id=["'](?:root|master-stage)["']|data-hf-id=["']hf-root["'])[^>]*>)/i,
+          `$1\n    ${audioTag}`,
+        );
+      }
+
+      // Update src on <audio id="narration"> to match the active audio file
       html = html.replace(
-        /(id=["']root["'][^>]*data-duration=["'])[0-9.]+([^>]*["'])/,
-        `$1${exactDuration}$2`,
+        /(<audio[^>]*\bid=["']narration["'][^>]*\bsrc=["'])[^"']*(["'])/i,
+        `$1assets/${audioFile}$2`,
       );
-      // Update narration audio element data-duration if present
       html = html.replace(
-        /(<audio[^>]*id=["']narration["'][^>]*data-duration=["'])[0-9.]+([^>]*["'])/,
-        `$1${exactDuration}$2`,
+        /(<audio[^>]*\bsrc=["'])[^"']*(["'][^>]*\bid=["']narration["'])/i,
+        `$1assets/${audioFile}$2`,
       );
+
+      // If the project only has 1 starter placeholder scene mount at start=0, update its duration to match
+      const sceneMounts =
+        html.match(
+          /<div\b[^>]*\b(?:data-composition-src|data-composition-id|data-src|data-composition)=["'][^"']+["'][^>]*>/gi,
+        ) || [];
+      const actualSceneMounts = sceneMounts.filter(
+        (m) => !m.includes('id="root"') && !m.includes('id="master-stage"'),
+      );
+      if (actualSceneMounts.length === 1) {
+        const onlyMount = actualSceneMounts[0]!;
+        const startMatch = onlyMount.match(/\bdata-start=["']([0-9.]+)["']/i);
+        const mountStart = startMatch ? Number.parseFloat(startMatch[1]!) : 0;
+        if (mountStart === 0) {
+          const updatedMount = onlyMount.replace(
+            /(\bdata-duration=["'])[0-9.]+(["'])/i,
+            `$1${exactDuration}$2`,
+          );
+          html = html.replace(onlyMount, updatedMount);
+        }
+      }
 
       await writeFile(sourcesIndex, html, "utf-8");
       return c.json({
         ok: true,
         durationSynced: Number.parseFloat(exactDuration),
+        rawAudioDurationSeconds: rawAudioDuration,
+        fps,
+        ceilingFrames,
         targetFile: sourcesIndex,
       });
     } catch (err) {

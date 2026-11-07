@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Hono } from "hono";
@@ -350,7 +350,8 @@ export function registerProjectRoutes(api: Hono, adapter: StudioApiAdapter): voi
     const channel = body.channel || "Turning_Point_Stories";
     const episodeId = body.episodeId.trim().replace(/[^a-zA-Z0-9_-]/g, "_");
     const title = body.title?.trim() || episodeId.replace(/_/g, " ");
-    const question = body.centralQuestion?.trim() || "Which moment turned crisis into a turning point?";
+    const question =
+      body.centralQuestion?.trim() || "Which moment turned crisis into a turning point?";
 
     const baseDir = "/Users/yonassayfu/Projects/ProductionStudio";
     const channelEpisodesDir = join(baseDir, "channels", channel, "episodes");
@@ -420,27 +421,50 @@ export function registerProjectRoutes(api: Hono, adapter: StudioApiAdapter): voi
     );
     await writeFile(join(epDir, "Timing", `${episodeId}_Timing_Map.json`), timingContent, "utf-8");
 
-    // 4. Sources/index.html (Desktop-compatible entry point!)
+    // 4. Sources/assets/gsap.min.js (vendor runtime copy)
+    const gsapVendorSources = [
+      "/Users/yonassayfu/Projects/HyperFrames_Custom_Studio/hyperframes/node_modules/.bun/gsap@3.15.0/node_modules/gsap/dist/gsap.min.js",
+      "/Users/yonassayfu/Projects/ProductionStudio/channels/Turning_Point_Stories/episodes/EP04_Suez_Hormuz_Waterways/Sources/assets/gsap.min.js",
+    ];
+    for (const vSrc of gsapVendorSources) {
+      if (existsSync(vSrc)) {
+        try {
+          await copyFile(vSrc, join(epDir, "Sources", "assets", "gsap.min.js"));
+          break;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    // 5. Sources/index.html (Fully compliant with Agent_Editing_Contract.md & Studio reader)
     const sourcesIndex = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, height=1080">
   <title>${title} (${episodeId})</title>
   <style>
-    body, html { margin: 0; padding: 0; overflow: hidden; background: #0B141C; width: 1920px; height: 1080px; }
-    #master-stage { width: 1920px; height: 1080px; position: relative; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body, html, #root, #master-stage { width: 1920px; height: 1080px; overflow: hidden; background: #0B141C; margin: 0; padding: 0; }
+    .scene-mount { position: absolute; inset: 0; width: 1920px; height: 1080px; }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="assets/gsap.min.js"></script>
 </head>
 <body>
-  <div id="master-stage" data-duration="24.0" data-fps="30">
-    <div data-composition="s01" data-src="compositions/s01.html" data-start="0" data-duration="24.0"></div>
+  <div data-hf-id="hf-root" id="root" data-composition-id="main" data-start="0" data-duration="24.000" data-fps="30" data-width="1920" data-height="1080">
+    <audio data-hf-id="hf-narration" id="narration" data-start="0" data-duration="24.000" data-track-index="0" data-volume="1" src="assets/narration.mp3"></audio>
+    <div data-hf-id="hf-s01-mount" id="s01" class="scene-mount"
+         data-composition-id="s01" data-composition-src="compositions/s01.html"
+         data-composition="s01" data-src="compositions/s01.html"
+         data-start="0.000" data-duration="24.000" data-track-index="1"
+         data-width="1920" data-height="1080"></div>
   </div>
 </body>
 </html>`;
     await writeFile(join(epDir, "Sources", "index.html"), sourcesIndex, "utf-8");
 
-    // 5. Sources/hyperframes.json
+    // 6. Sources/hyperframes.json
     const metaJson = JSON.stringify(
       {
         id: episodeId,
@@ -455,7 +479,7 @@ export function registerProjectRoutes(api: Hono, adapter: StudioApiAdapter): voi
     );
     await writeFile(join(epDir, "Sources", "hyperframes.json"), metaJson, "utf-8");
 
-    // 6. Sources/compositions/s01.html
+    // 7. Sources/compositions/s01.html
     const s01Html = `<template>
   <div data-hf-id="hf-s01-root" id="root" data-composition-id="s01" data-width="1920" data-height="1080">
     <style>
@@ -466,11 +490,11 @@ export function registerProjectRoutes(api: Hono, adapter: StudioApiAdapter): voi
       #s01-headline-text { font-size: 52px; font-weight: 900; line-height: 1.15; color: #FFFFFF; }
       #s01-central-q { margin-top: 24px; font-size: 22px; color: #C8D6DF; line-height: 1.4; border-left: 4px solid #357F83; padding-left: 16px; }
     </style>
-    <div id="s01-vignette"></div>
-    <div id="s01-headline-card">
-      <div id="s01-kicker">${episodeId.replace(/_/g, " ")}</div>
-      <div id="s01-headline-text">${title}</div>
-      <div id="s01-central-q">${question}</div>
+    <div data-hf-id="hf-s01-vignette" id="s01-vignette" class="clip" data-start="0.00" data-duration="24.00"></div>
+    <div data-hf-id="hf-s01-headline-card" id="s01-headline-card" class="clip" data-start="0.40" data-duration="23.60" data-motion-in="rise-up">
+      <div data-hf-id="hf-s01-kicker" id="s01-kicker">${episodeId.replace(/_/g, " ")}</div>
+      <div data-hf-id="hf-s01-headline-text" id="s01-headline-text">${title}</div>
+      <div data-hf-id="hf-s01-central-q" id="s01-central-q">${question}</div>
     </div>
     <script>
       (() => {
