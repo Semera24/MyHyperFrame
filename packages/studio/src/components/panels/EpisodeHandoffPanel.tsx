@@ -101,6 +101,7 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
   const [checkerTheme, setCheckerTheme] = useState<"dark" | "light" | "black">("dark");
   const [selectedAsset, setSelectedAsset] = useState<AssetPreflightItem | null>(null);
   const [showEndpointModal, setShowEndpointModal] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
 
   const fetchHandoff = useCallback(async () => {
@@ -128,10 +129,45 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
     fetchHandoff();
   }, [fetchHandoff]);
 
+  const handleSyncDuration = async () => {
+    if (!projectId) return;
+    setSyncing(true);
+    try {
+      const res = await studioApiFetch(
+        `/api/projects/${encodeURIComponent(projectId)}/handoff/sync-duration`,
+        { method: "POST" },
+      );
+      if (res && res.ok) {
+        const json = (await res.json()) as {
+          ok: boolean;
+          durationSynced?: number;
+          ceilingFrames?: number;
+          fps?: number;
+          error?: string;
+        };
+        if (json.ok) {
+          setActionStatus(
+            `✓ Synced timeline to ${json.durationSynced}s (${json.ceilingFrames}f @ ${json.fps}fps)`,
+          );
+          setShowEndpointModal(false);
+          await fetchHandoff();
+        } else {
+          setActionStatus(`Failed: ${json.error || "Unknown error"}`);
+        }
+      } else {
+        const err = await res?.text().catch(() => "Server error");
+        setActionStatus(`Failed to sync duration: ${err}`);
+      }
+    } catch (err) {
+      setActionStatus(`Error: ${String(err)}`);
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setActionStatus(null), 5000);
+    }
+  };
+
   const handleSimulateSyncDuration = () => {
-    setActionStatus("Simulated: Sync Duration modal opened for review. No production files modified.");
     setShowEndpointModal(true);
-    setTimeout(() => setActionStatus(null), 4000);
   };
 
   if (!projectId) {
@@ -253,20 +289,42 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
               </div>
             </div>
 
-            {ep && ep.deltaFrames !== 0 && (
-              <div className="flex items-center justify-between p-2 rounded bg-amber-500/10 border border-amber-500/30">
-                <div className="text-[10px] text-amber-300">
+            {ep && ep.deltaFrames !== 0 ? (
+              <div className="flex items-center justify-between p-2 rounded bg-amber-500/10 border border-amber-500/30 gap-2">
+                <div className="text-[10px] text-amber-300 min-w-0">
                   Timeline delta: <strong>{ep.deltaFrames > 0 ? `+${ep.deltaFrames}` : ep.deltaFrames} frames</strong> ({ep.deltaSeconds > 0 ? `+${ep.deltaSeconds}` : ep.deltaSeconds}s)
                 </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleSimulateSyncDuration}
+                    className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[9.5px] font-medium text-neutral-300 transition-colors cursor-pointer"
+                  >
+                    Inspect
+                  </button>
+                  <button
+                    type="button"
+                    disabled={syncing}
+                    onClick={() => void handleSyncDuration()}
+                    className="px-2.5 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/50 text-[9.5px] font-bold text-amber-200 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <span>{syncing ? "Syncing..." : "⚡ Sync Duration"}</span>
+                  </button>
+                </div>
+              </div>
+            ) : ep ? (
+              <div className="flex items-center justify-between p-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-300 font-mono">
+                <span>✓ In sync with narration ({ep.frameAlignedSeconds}s / {ep.ceilingFrames}f)</span>
                 <button
                   type="button"
-                  onClick={handleSimulateSyncDuration}
-                  className="px-2 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/35 border border-amber-500/40 text-[9.5px] font-bold text-amber-200 transition-colors cursor-pointer"
+                  disabled={syncing}
+                  onClick={() => void handleSyncDuration()}
+                  className="px-1.5 py-0.2 rounded hover:bg-emerald-500/20 text-[9px] text-emerald-400 cursor-pointer"
                 >
-                  Inspect Endpoint
+                  Re-sync
                 </button>
               </div>
-            )}
+            ) : null}
           </div>
         ) : (
           <p className="text-[11px] text-neutral-400 italic">
@@ -499,7 +557,15 @@ export const EpisodeHandoffPanel = memo(function EpisodeHandoffPanel({
                 onClick={() => setShowEndpointModal(false)}
                 className="px-3 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold cursor-pointer"
               >
-                Close (Read-Only)
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={syncing}
+                onClick={() => void handleSyncDuration()}
+                className="px-3 py-1 rounded bg-gradient-to-r from-amber-500 to-emerald-400 text-slate-950 hover:from-amber-400 hover:to-emerald-300 text-xs font-bold shadow-md cursor-pointer disabled:opacity-50"
+              >
+                {syncing ? "Applying..." : "⚡ Apply Frame-Aligned Duration to Sources"}
               </button>
             </div>
           </div>
