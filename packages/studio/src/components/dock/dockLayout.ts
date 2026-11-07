@@ -7,14 +7,16 @@ const MIN_PREVIEW_H = 200;
 const MIN_TIMELINE_H = 100;
 const MIN_SIDE_W = 200;
 const MIN_SIDE_W_FLOOR = 120;
-const DEFAULT_TIMELINE_H = 360;
+const DEFAULT_TIMELINE_H = 300;
 const DEFAULT_LEFT = [
   "compositions",
-  "transitions",
+  "audio",
+  "text",
   "motion",
+  "transitions",
+  "catalog",
   "assets",
   "code",
-  "catalog",
 ] as const;
 const DEFAULT_RIGHT = [
   "design",

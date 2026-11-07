@@ -4,6 +4,8 @@ export const PANEL_IDS = [
   "preview",
   "timeline",
   "compositions",
+  "audio",
+  "text",
   "transitions",
   "motion",
   "assets",
@@ -45,12 +47,17 @@ export const PANEL_DEFINITIONS = {
     keepMounted: true,
   },
   compositions: {
-    title: "Media",
+    title: "📁 Media",
     zone: "left",
     reopen: { near: "preview", direction: "left" },
   },
-  transitions: {
-    title: "🔀 Transitions",
+  audio: {
+    title: "🎵 Audio",
+    zone: "left",
+    reopen: { near: "compositions", direction: "within" },
+  },
+  text: {
+    title: "🔤 Text",
     zone: "left",
     reopen: { near: "compositions", direction: "within" },
   },
@@ -59,13 +66,18 @@ export const PANEL_DEFINITIONS = {
     zone: "left",
     reopen: { near: "compositions", direction: "within" },
   },
-  assets: { title: "Assets", zone: "left", reopen: { near: "compositions", direction: "within" } },
-  code: { title: "Code", zone: "left", reopen: { near: "compositions", direction: "within" } },
-  catalog: {
-    title: "Catalog",
+  transitions: {
+    title: "🔀 Transitions",
     zone: "left",
     reopen: { near: "compositions", direction: "within" },
   },
+  catalog: {
+    title: "📦 Templates",
+    zone: "left",
+    reopen: { near: "compositions", direction: "within" },
+  },
+  assets: { title: "Assets", zone: "left", reopen: { near: "compositions", direction: "within" } },
+  code: { title: "Code", zone: "left", reopen: { near: "compositions", direction: "within" } },
   design: { title: "Inspector", zone: "right", reopen: { near: "preview", direction: "right" } },
   layers: { title: "Layers", zone: "right", reopen: { near: "design", direction: "within" } },
   assistant: {

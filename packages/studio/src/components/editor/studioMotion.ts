@@ -66,7 +66,6 @@ import {
   STUDIO_MOTION_ORIGINAL_BORDER_COLOR_ATTR,
   STUDIO_MOTION_ORIGINAL_COLOR_ATTR,
   STUDIO_MOTION_TIMELINE_ID,
-  type StudioGsapMotion,
   type StudioMotionManifest,
   type StudioMotionTarget,
   type StudioMotionWindow,
@@ -252,6 +251,21 @@ function scheduleMotionTweensOnTimeline(
     );
   }
 
+  if (motion.category === "transition") {
+    const fromSceneId = motion.transition?.fromSceneId || "s01";
+    const fromEl = win.document?.getElementById(fromSceneId);
+    if (fromEl) {
+      captureOriginalMotionStyles(fromEl);
+      fromEl.setAttribute(STUDIO_MOTION_ATTR, "true");
+      timeline.fromTo(
+        fromEl,
+        { opacity: 1, autoAlpha: 1 },
+        { opacity: 0, autoAlpha: 0, duration, ease, overwrite: "auto", immediateRender: false },
+        effectiveStart,
+      );
+    }
+  }
+
   const fromVars: Record<string, unknown> = { ...motion.from };
   const toVars: Record<string, unknown> = {
     ...motion.to,
@@ -282,6 +296,74 @@ function readCurrentTime(win: StudioMotionWindow, fallback?: number): number {
     // fall through
   }
   return 0;
+}
+
+function applySceneTransitionsPass(
+  document: Document,
+  win: StudioMotionWindow,
+  motions: Array<{
+    category: string;
+    duration: number;
+    start: number;
+    delay?: number;
+    transition?: { fromSceneId?: string; toSceneId?: string; cutTime?: number };
+  }>,
+  safeTime: number,
+): void {
+  for (const motion of motions) {
+    if (motion.category !== "transition") continue;
+    const fromSceneId = motion.transition?.fromSceneId || "s01";
+    const toSceneId = motion.transition?.toSceneId || "s02";
+    const fromEl = document.getElementById(fromSceneId);
+    const toEl = document.getElementById(toSceneId);
+    if (!fromEl || !toEl) continue;
+
+    const tStart = Math.max(0, motion.start + (motion.delay ?? 0));
+    const duration = motion.duration;
+    const tEnd = tStart + duration;
+    const cutTime = motion.transition?.cutTime ?? tStart + duration / 2;
+
+    if (safeTime >= tStart && safeTime <= tEnd) {
+      for (const el of [fromEl, toEl]) {
+        el.style.setProperty("visibility", "visible", "important");
+        el.style.setProperty("display", "block", "important");
+        el.removeAttribute("data-hf-clip-hidden");
+        el.querySelectorAll("[data-hf-clip-hidden]").forEach((c) =>
+          c.removeAttribute("data-hf-clip-hidden"),
+        );
+        el.querySelectorAll("*").forEach((c) => {
+          if (c instanceof HTMLElement && c.style.visibility === "hidden")
+            c.style.removeProperty("visibility");
+        });
+      }
+
+      const linearProg =
+        duration > 0 ? Math.max(0, Math.min(1, (safeTime - tStart) / duration)) : 0.5;
+      const smoothProg = 0.5 - 0.5 * Math.cos(Math.PI * linearProg);
+      fromEl.style.setProperty("opacity", String(1 - smoothProg), "important");
+      toEl.style.setProperty("opacity", String(smoothProg), "important");
+
+      if (safeTime >= cutTime) {
+        const s01Dur = parseFloat(fromEl.getAttribute("data-duration") || "3.0");
+        const s01Tl = win.__timelines?.[fromSceneId];
+        if (s01Tl && typeof (s01Tl as { time?: (t: number) => unknown }).time === "function") {
+          (s01Tl as { time: (t: number) => unknown }).time(s01Dur);
+        }
+      }
+      if (safeTime < cutTime) {
+        const s02Tl = win.__timelines?.[toSceneId];
+        if (s02Tl && typeof (s02Tl as { time?: (t: number) => unknown }).time === "function") {
+          (s02Tl as { time: (t: number) => unknown }).time(0);
+        }
+      }
+    } else if (safeTime < tStart) {
+      fromEl.style.removeProperty("opacity");
+      toEl.style.setProperty("opacity", "0", "important");
+    } else if (safeTime > tEnd) {
+      fromEl.style.setProperty("opacity", "0", "important");
+      toEl.style.removeProperty("opacity");
+    }
+  }
 }
 
 export function applyStudioMotionManifest(
@@ -342,6 +424,8 @@ export function applyStudioMotionManifest(
     } else {
       timeline.time?.(safeTime);
     }
+
+    applySceneTransitionsPass(document, win, sortedMotions, safeTime);
     return applied;
   } finally {
     win.__hfStudioMotionApplying = false;
@@ -422,6 +506,8 @@ export function applyStudioMotionFromDom(document: Document, currentTime?: numbe
     } else {
       timeline.time?.(safeTime);
     }
+
+    applySceneTransitionsPass(document, win, sortedMotions, safeTime);
     return applied;
   } finally {
     win.__hfStudioMotionApplying = false;

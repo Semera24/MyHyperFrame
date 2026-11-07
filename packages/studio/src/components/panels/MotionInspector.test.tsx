@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -94,7 +95,7 @@ describe("MotionInspector", () => {
     expect(container?.textContent).toContain("Rise Up");
     expect(container?.textContent).toContain("Target: #hero-card");
     expect(container?.textContent).toContain("Timing & Duration");
-    expect(container?.textContent).toContain("Spatial Transform");
+    expect(container?.textContent).toContain("Spatial & Visual Transform");
     expect(container?.textContent).toContain("Easing Curve");
     expect(container?.textContent).toContain("Duplicate");
     expect(container?.textContent).toContain("Remove");

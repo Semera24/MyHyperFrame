@@ -280,6 +280,44 @@ function studioMotionRenderRuntime(
       if (start == null || duration == null || start < 0 || duration <= 0) continue;
       const delay = finiteNumber(motion.delay) ?? 0;
       const effectiveStart = Math.max(0, start + delay);
+      const ease = resolveEase(motion);
+      // Scene transitions animate both outgoing and incoming scenes simultaneously
+      if (motion.category === "transition") {
+        const transRecord = objectRecord(motion.transition);
+        const fromSceneId =
+          typeof transRecord?.fromSceneId === "string" ? transRecord.fromSceneId : "s01";
+        const toSceneId =
+          typeof transRecord?.toSceneId === "string" ? transRecord.toSceneId : "s02";
+        const fromEl = document.getElementById(fromSceneId);
+        const toEl = document.getElementById(toSceneId);
+        if (fromEl && toEl && typeof timeline.fromTo === "function") {
+          if (!fromEl.hasAttribute(STUDIO_MOTION_ATTR)) {
+            fromEl.setAttribute(ORIGINAL_OPACITY_ATTR, fromEl.style.opacity);
+            fromEl.setAttribute(ORIGINAL_VISIBILITY_ATTR, fromEl.style.visibility);
+            fromEl.setAttribute(STUDIO_MOTION_ATTR, "true");
+          }
+          if (!toEl.hasAttribute(STUDIO_MOTION_ATTR)) {
+            toEl.setAttribute(ORIGINAL_OPACITY_ATTR, toEl.style.opacity);
+            toEl.setAttribute(ORIGINAL_VISIBILITY_ATTR, toEl.style.visibility);
+            toEl.setAttribute(STUDIO_MOTION_ATTR, "true");
+          }
+          timeline.fromTo(
+            fromEl,
+            { opacity: 1, autoAlpha: 1 },
+            { opacity: 0, autoAlpha: 0, duration, ease, overwrite: "auto", immediateRender: false },
+            effectiveStart,
+          );
+          timeline.fromTo(
+            toEl,
+            { opacity: 0, autoAlpha: 0 },
+            { opacity: 1, autoAlpha: 1, duration, ease, overwrite: "auto", immediateRender: false },
+            effectiveStart,
+          );
+          applied += 2;
+          continue;
+        }
+      }
+
       const from = parseMotionValues(motion.from);
       const to = parseMotionValues(motion.to);
       if (!from || !to) continue;
@@ -296,7 +334,6 @@ function studioMotionRenderRuntime(
       target.setAttribute(STUDIO_MOTION_ATTR, "true");
       const isFirst = !seenTargets.has(target);
       seenTargets.add(target);
-      const ease = resolveEase(motion);
       const keyframesRaw = Array.isArray(motion.keyframes) ? motion.keyframes : null;
       if (keyframesRaw && keyframesRaw.length >= 2) {
         for (let i = 0; i < keyframesRaw.length - 1; i++) {
@@ -360,6 +397,93 @@ function studioMotionRenderRuntime(
     } else {
       timeline.time?.(currentTime);
     }
+
+    // -------------------------------------------------------------
+    // Two-Scene Transition Compositing Pass (Both scenes visible during blend)
+    // -------------------------------------------------------------
+    for (const motionValue of sortedMotions) {
+      const motion = objectRecord(motionValue);
+      if (!motion || motion.category !== "transition") continue;
+      const transRecord = objectRecord(motion.transition);
+      const fromSceneId =
+        typeof transRecord?.fromSceneId === "string" ? transRecord.fromSceneId : "s01";
+      const toSceneId = typeof transRecord?.toSceneId === "string" ? transRecord.toSceneId : "s02";
+      const fromEl = document.getElementById(fromSceneId);
+      const toEl = document.getElementById(toSceneId);
+      if (!fromEl || !toEl) continue;
+
+      const start = finiteNumber(motion.start) ?? 0;
+      const duration = finiteNumber(motion.duration) ?? 0.8;
+      const delay = finiteNumber(motion.delay) ?? 0;
+      const tStart = Math.max(0, start + delay);
+      const tEnd = tStart + duration;
+      const cutTime = finiteNumber(transRecord?.cutTime) ?? tStart + duration / 2;
+
+      if (currentTime >= tStart && currentTime <= tEnd) {
+        // We are within the crossfade window: both scenes must render simultaneously!
+        fromEl.style.setProperty("visibility", "visible", "important");
+        fromEl.style.setProperty("display", "block", "important");
+        fromEl.removeAttribute(STUDIO_MOTION_ATTR);
+        fromEl.removeAttribute("data-hf-clip-hidden");
+        for (const c of Array.from(fromEl.querySelectorAll("[data-hf-clip-hidden]"))) {
+          c.removeAttribute("data-hf-clip-hidden");
+        }
+        for (const item of Array.from(fromEl.querySelectorAll("*"))) {
+          if (isHTMLElement(item) && item.style.visibility === "hidden") {
+            item.style.removeProperty("visibility");
+          }
+        }
+
+        toEl.style.setProperty("visibility", "visible", "important");
+        toEl.style.setProperty("display", "block", "important");
+        toEl.removeAttribute("data-hf-clip-hidden");
+        for (const c of Array.from(toEl.querySelectorAll("[data-hf-clip-hidden]"))) {
+          c.removeAttribute("data-hf-clip-hidden");
+        }
+        for (const item of Array.from(toEl.querySelectorAll("*"))) {
+          if (isHTMLElement(item) && item.style.visibility === "hidden") {
+            item.style.removeProperty("visibility");
+          }
+        }
+
+        // Calculate smooth crossfade curve (cosine ease for perceptual linearity)
+        const linearProg =
+          duration > 0 ? Math.max(0, Math.min(1, (currentTime - tStart) / duration)) : 0.5;
+        const smoothProg = 0.5 - 0.5 * Math.cos(Math.PI * linearProg);
+        const fromAlpha = 1 - smoothProg;
+        const toAlpha = smoothProg;
+
+        fromEl.style.setProperty("opacity", String(fromAlpha), "important");
+        toEl.style.setProperty("opacity", String(toAlpha), "important");
+
+        // Outside normal range timeline synchronization:
+        // When currentTime >= cutTime, outgoing scene s01 has finished its nominal slot.
+        // Clamp its internal timeline to its end duration so all cards hold their final animated state.
+        if (currentTime >= cutTime) {
+          const s01Dur = finiteNumber(fromEl.getAttribute("data-duration")) ?? 3.0;
+          const s01Tl = runtimeWindow.__timelines?.[fromSceneId];
+          if (s01Tl && typeof (s01Tl as { time?: (t: number) => unknown }).time === "function") {
+            (s01Tl as { time: (t: number) => unknown }).time(s01Dur);
+          }
+        }
+
+        // When currentTime < cutTime, incoming scene s02 has not reached its nominal slot.
+        // Clamp its internal timeline to 0 so all cards hold their start state while fading in.
+        if (currentTime < cutTime) {
+          const s02Tl = runtimeWindow.__timelines?.[toSceneId];
+          if (s02Tl && typeof (s02Tl as { time?: (t: number) => unknown }).time === "function") {
+            (s02Tl as { time: (t: number) => unknown }).time(0);
+          }
+        }
+      } else if (currentTime < tStart) {
+        fromEl.style.removeProperty("opacity");
+        toEl.style.setProperty("opacity", "0", "important");
+      } else if (currentTime > tEnd) {
+        fromEl.style.setProperty("opacity", "0", "important");
+        toEl.style.removeProperty("opacity");
+      }
+    }
+
     return applied;
   };
 

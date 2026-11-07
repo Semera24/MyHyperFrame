@@ -202,4 +202,62 @@ describe("createStudioMotionRenderBodyScript", () => {
     ]);
     expect(gsapState.calls[0]?.to.ease).toBe("studio-card-bounce");
   });
+
+  it("simultaneously evaluates and blends two scenes during a crossfade transition without dipping to black", () => {
+    const window = new Window();
+    window.document.body.innerHTML = `
+      <div id="s01" data-start="0" data-duration="3.0"></div>
+      <div id="s02" data-start="3.0" data-duration="3.0"></div>
+    `;
+    installFakeGsap(window);
+    const script = createStudioMotionRenderBodyScript(
+      JSON.stringify({
+        version: 1,
+        motions: [
+          {
+            id: "transition-crossfade-s01-s02",
+            kind: "gsap-motion",
+            category: "transition",
+            target: { sourceFile: "index.html", id: "s02" },
+            start: 2.6,
+            duration: 0.8,
+            ease: "sine.inOut",
+            from: { opacity: 0 },
+            to: { opacity: 1 },
+            transition: {
+              fromSceneId: "s01",
+              toSceneId: "s02",
+              cutTime: 3.0,
+              type: "crossfade",
+            },
+          },
+        ],
+      }),
+    );
+    if (!script) throw new Error("script fixture missing");
+
+    runScript(window, script);
+
+    const s01 = window.document.getElementById("s01")!;
+    const s02 = window.document.getElementById("s02")!;
+    const apply = (window as unknown as { __hfStudioMotionApply: (time: number) => void })
+      .__hfStudioMotionApply;
+
+    // 1. At start of transition (2.60s): Scene 1 is dominant, Scene 2 is at 0
+    apply(2.6);
+    expect(parseFloat(s01.style.opacity)).toBeCloseTo(1.0, 1);
+    expect(parseFloat(s02.style.opacity)).toBeCloseTo(0.0, 1);
+
+    // 2. Exactly at cut (3.00s): Both scenes are visible and rendered at 50% opacity simultaneously
+    apply(3.0);
+    expect(s01.style.visibility).toBe("visible");
+    expect(s02.style.visibility).toBe("visible");
+    expect(parseFloat(s01.style.opacity)).toBeCloseTo(0.5, 1);
+    expect(parseFloat(s02.style.opacity)).toBeCloseTo(0.5, 1);
+
+    // 3. At end of transition (3.40s): Scene 1 has faded to 0, Scene 2 is at 1.0
+    apply(3.4);
+    expect(parseFloat(s01.style.opacity)).toBeCloseTo(0.0, 1);
+    expect(parseFloat(s02.style.opacity)).toBeCloseTo(1.0, 1);
+  });
 });

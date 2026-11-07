@@ -201,6 +201,8 @@ describe("Dock on React 19", () => {
     const { closePanel, togglePanel } = useDockLayoutStore.getState();
     for (const id of [
       "compositions",
+      "audio",
+      "text",
       "transitions",
       "motion",
       "assets",
@@ -218,6 +220,8 @@ describe("Dock on React 19", () => {
     const { closePanel, togglePanel } = useDockLayoutStore.getState();
     for (const id of [
       "compositions",
+      "audio",
+      "text",
       "transitions",
       "motion",
       "assets",

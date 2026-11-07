@@ -7,6 +7,9 @@ import { BlocksTab, type BlockPreviewInfo } from "./sidebar/BlocksTab";
 import { CompositionsPanel } from "./sidebar/CompositionsPanel";
 import { TransitionsPanel } from "./panels/TransitionsPanel";
 import { MotionLibraryPanel } from "./panels/MotionLibraryPanel";
+import { AudioPanel } from "./panels/AudioPanel";
+import { TextPresetsPanel } from "./panels/TextPresetsPanel";
+import { CreationDockHeader } from "./sidebar/CreationDockHeader";
 import { SidebarLintButton } from "./sidebar/SidebarLintButton";
 import { Dock } from "./dock/Dock";
 import { useDockLayoutStore } from "./dock/dockLayoutStore";
@@ -35,9 +38,18 @@ interface StudioLeftPanelsProps {
   }) => Promise<void>;
 }
 
-function PanelColumn({ footer, children }: { footer: ReactNode; children: ReactNode }) {
+function PanelColumn({
+  activeId,
+  footer,
+  children,
+}: {
+  activeId?: import("./dock/panelRegistry").PanelId;
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-neutral-950">
+      <CreationDockHeader activePanelId={activeId} />
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       {footer}
     </div>
@@ -56,9 +68,9 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
   lintFindingsByFile,
   onAddAssetToTimeline,
   onAddCompositionToTimeline,
-  activeCompPath,
-  reloadPreview,
-  refreshFileTree,
+  activeCompPath: _activeCompPath,
+  reloadPreview: _reloadPreview,
+  refreshFileTree: _refreshFileTree,
   recordEdit,
 }: StudioLeftPanelsProps) {
   const { projectId, renderQueue, waitForPendingDomEditSaves } = useStudioShellContext();
@@ -108,8 +120,8 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
 
   return (
     <>
-      <Dock.Panel id="compositions">
-        <PanelColumn footer={lintButton}>
+      <Dock.Panel id="compositions" title="📁 Media">
+        <PanelColumn activeId="compositions" footer={lintButton}>
           <CompositionsPanel
             projectId={projectId}
             compositions={compositions}
@@ -122,14 +134,37 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
           />
         </PanelColumn>
       </Dock.Panel>
-      <Dock.Panel id="transitions" title="🔀 Transitions">
-        <TransitionsPanel recordEdit={recordEdit} />
+      <Dock.Panel id="audio" title="🎵 Audio">
+        <PanelColumn activeId="audio">
+          <AudioPanel
+            projectId={projectId}
+            assets={assets}
+            onAddAssetToTimeline={onAddAssetToTimeline}
+          />
+        </PanelColumn>
+      </Dock.Panel>
+      <Dock.Panel id="text" title="🔤 Text">
+        <PanelColumn activeId="text">
+          <TextPresetsPanel />
+        </PanelColumn>
       </Dock.Panel>
       <Dock.Panel id="motion" title="✨ Motion">
-        <MotionLibraryPanel recordEdit={recordEdit} />
+        <PanelColumn activeId="motion">
+          <MotionLibraryPanel recordEdit={recordEdit} />
+        </PanelColumn>
       </Dock.Panel>
-      <Dock.Panel id="assets">
-        <PanelColumn footer={lintButton}>
+      <Dock.Panel id="transitions" title="🔀 Transitions">
+        <PanelColumn activeId="transitions">
+          <TransitionsPanel recordEdit={recordEdit} />
+        </PanelColumn>
+      </Dock.Panel>
+      <Dock.Panel id="catalog" title="📦 Templates">
+        <PanelColumn activeId="catalog" footer={lintButton}>
+          <BlocksTab onAddBlock={onAddBlock} onPreviewBlock={onPreviewBlock} />
+        </PanelColumn>
+      </Dock.Panel>
+      <Dock.Panel id="assets" title="Assets">
+        <PanelColumn activeId="assets" footer={lintButton}>
           <AssetsTab
             projectId={projectId}
             assets={assets}
@@ -140,8 +175,8 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
           />
         </PanelColumn>
       </Dock.Panel>
-      <Dock.Panel id="code">
-        <PanelColumn footer={lintButton}>
+      <Dock.Panel id="code" title="Code">
+        <PanelColumn activeId="code" footer={lintButton}>
           <div className="flex min-h-0 flex-1">
             {fileTree.length > 0 && (
               <div className="w-[160px] shrink-0 border-r border-neutral-800 overflow-y-auto">
@@ -169,11 +204,6 @@ export const StudioLeftPanels = memo(function StudioLeftPanels({
               />
             </div>
           </div>
-        </PanelColumn>
-      </Dock.Panel>
-      <Dock.Panel id="catalog">
-        <PanelColumn footer={lintButton}>
-          <BlocksTab onAddBlock={onAddBlock} onPreviewBlock={onPreviewBlock} />
         </PanelColumn>
       </Dock.Panel>
     </>

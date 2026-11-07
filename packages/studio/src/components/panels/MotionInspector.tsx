@@ -1,13 +1,11 @@
 import { useCallback, useMemo } from "react";
-import { useStudioPlaybackContext, useStudioShellContext } from "../../contexts/StudioContext";
+import { useStudioShellContext } from "../../contexts/StudioContext";
 import { useFileManagerContext } from "../../contexts/FileManagerContext";
 import { usePlayerStore } from "../../player";
 import {
-  MOTION_PRESET_CATALOG,
   MOTION_STYLE_PROFILES,
   compileMotionPreset,
   getMotionPresetById,
-  type MotionPresetDefinition,
 } from "../editor/motionPresetCatalog";
 import {
   STUDIO_GSAP_EASE_OPTIONS,
@@ -66,8 +64,8 @@ export interface MotionInspectorProps {
 }
 
 export function MotionInspector({ selectedMotion: propMotion, onClose }: MotionInspectorProps) {
-  const { projectId, activeCompPath, previewIframeRef, showToast } = useStudioShellContext();
-  const { readOptionalProjectFile, writeProjectFile } = useFileManagerContext();
+  const { activeCompPath, previewIframeRef, showToast } = useStudioShellContext();
+  const { writeProjectFile } = useFileManagerContext();
 
   const currentTime = usePlayerStore((s) => s.currentTime);
   const requestSeek = usePlayerStore((s) => s.requestSeek);
@@ -371,10 +369,10 @@ export function MotionInspector({ selectedMotion: propMotion, onClose }: MotionI
       </div>
 
       {/* Direction & Distance (if applicable) */}
-      {!isTransition && (
+      {!isTransition ? (
         <div className="border-b border-neutral-800 p-3 space-y-3">
           <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
-            Spatial Transform
+            Spatial & Visual Transform
           </span>
 
           {/* Direction */}
@@ -415,6 +413,102 @@ export function MotionInspector({ selectedMotion: propMotion, onClose }: MotionI
             <span className="w-12 text-right font-mono text-xs text-neutral-200">
               {activeMotion.distance ?? 60}px
             </span>
+          </div>
+
+          {/* Scale */}
+          {(activeMotion.from?.scale != null || activeMotion.to?.scale != null) && (
+            <div className="flex items-center gap-2">
+              <span className="w-16 text-[10px] font-mono text-neutral-400">Scale:</span>
+              <input
+                type="range"
+                min="0.2"
+                max="2.5"
+                step="0.05"
+                value={activeMotion.to?.scale ?? 1.0}
+                onChange={(e) => {
+                  const val = Number(e.currentTarget.value);
+                  void handleUpdate({ to: { ...activeMotion.to, scale: val } }, "Change scale");
+                }}
+                className="flex-1 accent-amber-400 h-1"
+              />
+              <span className="w-12 text-right font-mono text-xs text-neutral-200">
+                {(activeMotion.to?.scale ?? 1.0).toFixed(2)}x
+              </span>
+            </div>
+          )}
+
+          {/* Rotation */}
+          {(activeMotion.from?.rotation != null || activeMotion.to?.rotation != null) && (
+            <div className="flex items-center gap-2">
+              <span className="w-16 text-[10px] font-mono text-neutral-400">Rotation:</span>
+              <input
+                type="range"
+                min="-360"
+                max="360"
+                step="5"
+                value={activeMotion.to?.rotation ?? 0}
+                onChange={(e) => {
+                  const val = Number(e.currentTarget.value);
+                  void handleUpdate(
+                    { to: { ...activeMotion.to, rotation: val } },
+                    "Change rotation",
+                  );
+                }}
+                className="flex-1 accent-amber-400 h-1"
+              />
+              <span className="w-12 text-right font-mono text-xs text-neutral-200">
+                {activeMotion.to?.rotation ?? 0}°
+              </span>
+            </div>
+          )}
+
+          {/* Opacity */}
+          {(activeMotion.from?.opacity != null || activeMotion.to?.opacity != null) && (
+            <div className="flex items-center gap-2">
+              <span className="w-16 text-[10px] font-mono text-neutral-400">Opacity:</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={activeMotion.to?.opacity ?? 1.0}
+                onChange={(e) => {
+                  const val = Number(e.currentTarget.value);
+                  void handleUpdate({ to: { ...activeMotion.to, opacity: val } }, "Change opacity");
+                }}
+                className="flex-1 accent-amber-400 h-1"
+              />
+              <span className="w-12 text-right font-mono text-xs text-neutral-200">
+                {Math.round((activeMotion.to?.opacity ?? 1.0) * 100)}%
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Transition specific properties */
+        <div className="border-b border-neutral-800 p-3 space-y-3">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-purple-400">
+            Scene Transition Parameters
+          </span>
+          <div className="rounded bg-neutral-900/80 p-2.5 border border-purple-900/40 text-[11px] space-y-1.5 font-mono">
+            <div className="flex justify-between text-neutral-400">
+              <span>Outgoing:</span>
+              <span className="text-neutral-200 font-semibold">
+                {activeMotion.transition?.fromSceneId || "s01"}
+              </span>
+            </div>
+            <div className="flex justify-between text-neutral-400">
+              <span>Incoming:</span>
+              <span className="text-neutral-200 font-semibold">
+                {activeMotion.transition?.toSceneId || "s02"}
+              </span>
+            </div>
+            <div className="flex justify-between text-neutral-400">
+              <span>Cut Boundary:</span>
+              <span className="text-purple-300 font-semibold">
+                {(activeMotion.start + activeMotion.duration / 2).toFixed(2)}s
+              </span>
+            </div>
           </div>
         </div>
       )}
