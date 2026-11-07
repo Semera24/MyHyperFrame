@@ -41,6 +41,9 @@ import { getPreviewTargetFromPointer } from "../../utils/studioPreviewHelpers";
 import { logSelect } from "../../utils/selectDebug";
 import { useOffCanvasIndicators } from "./useOffCanvasIndicators";
 
+const DOM_EDIT_CHROME_SELECTOR =
+  '[data-dom-edit-selection-box="true"], [data-dom-edit-rotate-control="true"], [data-dom-edit-chrome="true"]';
+
 // Re-exports for external consumers — preserving existing import paths.
 export {
   filterNestedDomEditGroupItems,
@@ -352,7 +355,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
   const handleOverlayMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!allowCanvasMovement) return;
     const target = event.target as HTMLElement | null;
-    const onBox = Boolean(target?.closest('[data-dom-edit-selection-box="true"]'));
+    const onBox = Boolean(target?.closest(DOM_EDIT_CHROME_SELECTOR));
     logSelect("mousedown", { shift: event.shiftKey, onBox });
     if (onBox) return;
     // Allow clicks anywhere on the overlay — GSAP-translated elements can
@@ -398,13 +401,9 @@ export const DomEditOverlay = memo(function DomEditOverlay({
     }
 
     const target = event.target as HTMLElement | null;
-    if (target?.closest('[data-dom-edit-selection-box="true"]')) return;
+    if (target?.closest(DOM_EDIT_CHROME_SELECTOR)) return;
 
     // Start marquee if clicking on empty canvas (no element under pointer).
-    // The hover selection is an ASYNC cache: on a fast click (or when the
-    // pointer was already resting over an element) it can still be empty while
-    // an element IS under the pointer — starting a marquee here would swallow
-    // the selection mousedown and the click would silently select nothing.
     // Confirm emptiness with a fresh SYNCHRONOUS hit-test before committing.
     if (!hoverSelectionRef.current && onMarqueeSelectRef.current && compRect.width > 0) {
       const iframe = iframeRef.current;
@@ -418,12 +417,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
         : null;
       if (freshTarget) return;
       if (overlayRef.current) {
-        // Anywhere empty on the overlay starts one, not just inside the frame.
-        // An element dragged past the edge sits OUT there in the grey, and a
-        // rubber band that refuses to start there cannot reach it — which left
-        // the timeline as the only way to select something you can plainly see.
-        // The hit test collects in overlay space and never clipped to the frame,
-        // so those elements were always selectable once the band could begin.
+        // Anywhere empty on the overlay starts one (including past frame edges).
         event.preventDefault();
         event.stopPropagation();
         marquee.begin(event);
@@ -473,12 +467,14 @@ export const DomEditOverlay = memo(function DomEditOverlay({
         // so the gesture's member snapshot starts from the nudged position.
         flushNudge();
         suppressNextBoxClickRef.current = false;
-        // Not while editing: taking focus back would send the keystroke nowhere.
-        if (!inlineText.editing) {
+        // Not while editing or clicking rotate control / input: taking focus back would send keystroke nowhere.
+        const target = event.target as HTMLElement | null;
+        if (!inlineText.editing && !target?.closest(DOM_EDIT_CHROME_SELECTOR)) {
           focusDomEditOverlayElement(event.currentTarget as FocusableDomEditOverlay);
         }
       }}
       onKeyDown={(event) => {
+        if ((event.target as HTMLElement | null)?.tagName === "INPUT") return;
         if (!inlineText.handleKeyDown(event)) return;
         event.preventDefault();
         event.stopPropagation();

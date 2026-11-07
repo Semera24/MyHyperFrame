@@ -1,4 +1,4 @@
-import { useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { OverlayRect } from "./domEditOverlayGeometry";
 
 /** Rotate handle below the selection: an attached circular-arrows icon chip
@@ -17,6 +17,8 @@ export function DomEditRotateHandle({
   onCommitRotation?: (angle: number) => void;
 }) {
   const [editingValue, setEditingValue] = useState<string | null>(null);
+  const isCancelledRef = useRef(false);
+  const isCommittedRef = useRef(false);
   const inset = cropOutlineInsetPx ?? { top: 0, right: 0, bottom: 0, left: 0 };
   const visibleLeft = overlayRect.left + inset.left;
   const visibleWidth = Math.max(0, overlayRect.width - inset.left - inset.right);
@@ -78,7 +80,13 @@ export function DomEditRotateHandle({
       </button>
 
       {onCommitRotation && (
-        <div className="flex items-center rounded border border-studio-accent/60 bg-studio-surface/95 px-1 py-0.5 shadow-[0_1px_4px_rgba(0,0,0,0.5)]">
+        <div
+          className="flex items-center rounded border border-studio-accent/60 bg-studio-surface/95 px-1 py-0.5 shadow-[0_1px_4px_rgba(0,0,0,0.5)]"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
           <input
             type="text"
             data-testid="canvas-rotation-input"
@@ -87,23 +95,45 @@ export function DomEditRotateHandle({
             className="w-11 bg-transparent text-center font-mono text-[10.5px] font-medium text-text-0 outline-hidden hover:text-accent-ink focus:text-accent-ink"
             value={editingValue !== null ? editingValue : `${currentAngle}°`}
             onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             onFocus={(e) => {
+              isCancelledRef.current = false;
+              isCommittedRef.current = false;
               setEditingValue(String(currentAngle));
-              e.currentTarget.select();
+              const target = e.currentTarget;
+              setTimeout(() => {
+                try {
+                  target.select();
+                } catch {
+                  /* input unmounted guard */
+                }
+              }, 0);
             }}
             onChange={(e) => setEditingValue(e.target.value)}
             onKeyDown={(e) => {
+              e.stopPropagation();
               if (e.key === "Enter") {
                 e.preventDefault();
+                isCancelledRef.current = false;
+                isCommittedRef.current = true;
                 commitValue(editingValue ?? e.currentTarget.value);
                 e.currentTarget.blur();
               } else if (e.key === "Escape") {
                 e.preventDefault();
+                isCancelledRef.current = true;
                 setEditingValue(null);
                 e.currentTarget.blur();
               }
             }}
             onBlur={(e) => {
+              if (isCancelledRef.current || isCommittedRef.current) {
+                isCancelledRef.current = false;
+                isCommittedRef.current = false;
+                setEditingValue(null);
+                return;
+              }
               const val = editingValue !== null ? editingValue : e.currentTarget.value;
               commitValue(val);
             }}
