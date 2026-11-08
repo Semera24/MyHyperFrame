@@ -12,6 +12,8 @@ import { InspectorIcon } from "./icons/InspectorIcon";
 import { HyperframesLogo } from "./ui/HyperframesLogo";
 import { ShowThemeToggle, ThemeToggle } from "./ThemeToggle";
 import { CreateEpisodeModal } from "./projects/CreateEpisodeModal";
+import { Gear } from "@phosphor-icons/react";
+import { StudioSettingsModal } from "./settings/StudioSettingsModal";
 
 interface StudioHeaderProps {
   captureFrameHref: string;
@@ -68,6 +70,7 @@ export const StudioHeader = memo(function StudioHeader({
     }>
   >([]);
   const [createEpisodeModalOpen, setCreateEpisodeModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   const isRendering = renderQueue.isRendering;
   const ffmpegMissing = renderQueue.ffmpegMissing;
@@ -108,6 +111,18 @@ export const StudioHeader = memo(function StudioHeader({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [episodesOpen]);
+
+  // Shortcut: Cmd+, / Ctrl+, toggles Studio Settings & Preferences modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <div className="flex items-center justify-between h-10 px-3 bg-surface border-b border-border-strong shrink-0">
@@ -388,6 +403,17 @@ export const StudioHeader = memo(function StudioHeader({
           </Button>
         </Tooltip>
         <Dock.WindowMenu />
+        <Tooltip label="Studio Settings & Preferences (⌘,)" side="bottom">
+          <Button
+            variant="ghost"
+            data-testid="header-settings"
+            aria-label="Settings & Preferences"
+            className="px-2"
+            onClick={() => setSettingsModalOpen(true)}
+          >
+            <Gear size={15} weight="bold" />
+          </Button>
+        </Tooltip>
         {showThemeToggle && <ThemeToggle />}
         <Tooltip
           label={
@@ -420,6 +446,14 @@ export const StudioHeader = memo(function StudioHeader({
       <CreateEpisodeModal
         isOpen={createEpisodeModalOpen}
         onClose={() => setCreateEpisodeModalOpen(false)}
+      />
+
+      {/* Studio Settings & Preferences Modal */}
+      <StudioSettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        projectId={projectId}
+        activeCompPath={activeCompPath}
       />
     </div>
   );
