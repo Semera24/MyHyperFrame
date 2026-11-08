@@ -24,6 +24,26 @@ vi.mock("../contexts/StudioContext", () => ({
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+if (typeof globalThis.localStorage === "undefined" || !globalThis.localStorage?.clear) {
+  const store = new Map<string, string>();
+  globalThis.localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+    clear: () => {
+      store.clear();
+    },
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  } as unknown as Storage;
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
   usePlayerStore.setState({

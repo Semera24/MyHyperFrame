@@ -901,3 +901,73 @@ export async function toggleDomLayerHidden(params: {
 
   return nextHidden;
 }
+
+/**
+ * Toggles the `data-locked` attribute on a DOM element in-place and persists
+ * the change to the element's underlying HTML source file. When locked, the
+ * element is ignored by canvas hit-testing so underlying/surrounding elements
+ * can be freely selected and edited.
+ */
+export async function toggleDomLayerLocked(params: {
+  element: HTMLElement;
+  projectId?: string | null;
+  activeCompPath?: string | null;
+}): Promise<boolean> {
+  const { element, activeCompPath } = params;
+  const isCurrentlyLocked =
+    element.hasAttribute("data-locked") || element.hasAttribute("data-timeline-locked");
+  const nextLocked = !isCurrentlyLocked;
+
+  if (nextLocked) {
+    element.setAttribute("data-locked", "true");
+  } else {
+    element.removeAttribute("data-locked");
+    element.removeAttribute("data-timeline-locked");
+  }
+
+  // Also sync timeline element timelineLocked flag if present in usePlayerStore
+  const store = usePlayerStore.getState();
+  const elemId = element.id || element.getAttribute("data-hf-id");
+  if (elemId) {
+    for (const el of store.elements) {
+      if (el.domId === elemId || el.id === elemId || el.hfId === elemId) {
+        store.updateElement(el.key ?? el.id, { timelineLocked: nextLocked });
+      }
+    }
+  }
+
+  const resolvedProjectId = params.projectId || store.timelineProjectId;
+  if (!resolvedProjectId) return nextLocked;
+
+  const { sourceFile } = getSourceFileForElement(element, activeCompPath ?? null);
+  const target = buildElementTarget(element, sourceFile, activeCompPath ?? null);
+
+  await studioApiFetch(
+    buildProjectApiPath(resolvedProjectId, "/file-mutations/patch-element-batches"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...studioWriteHeaders() },
+      body: JSON.stringify({
+        batches: [
+          {
+            sourceFile,
+            patches: [
+              {
+                target,
+                operations: [
+                  {
+                    type: "attribute",
+                    property: "data-locked",
+                    value: nextLocked ? "true" : null,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    },
+  ).catch(() => {});
+
+  return nextLocked;
+}

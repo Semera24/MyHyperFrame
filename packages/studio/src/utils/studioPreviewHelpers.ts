@@ -156,15 +156,23 @@ function collectPointerEventsNoneTargets(
   return disabled;
 }
 
+function isElementOrAncestorLocked(el: Element): boolean {
+  return (
+    el.hasAttribute("data-locked") ||
+    el.hasAttribute("data-timeline-locked") ||
+    Boolean(el.closest?.("[data-locked='true'], [data-locked=''], [data-timeline-locked]"))
+  );
+}
+
 // Shared tail of both pointer resolvers: hit-test candidates minus elements the
-// author hid from hit-testing via pointer-events:none.
+// author hid from hit-testing via pointer-events:none or locked layers.
 function filterAuthorInteractiveTargets(
   elements: Element[],
   activeCompositionPath: string | null,
 ): HTMLElement[] {
   const pointerEventsNoneTargets = collectPointerEventsNoneTargets(elements);
   return resolveAllVisualDomEditTargets(elements, { activeCompositionPath }).filter(
-    (el) => !pointerEventsNoneTargets.has(el),
+    (el) => !pointerEventsNoneTargets.has(el) && !isElementOrAncestorLocked(el),
   );
 }
 
@@ -237,12 +245,14 @@ export function getPreviewTargetFromPointer(
   if (
     groupHit &&
     !hasAuthorPointerEventsNone(groupHit) &&
+    !isElementOrAncestorLocked(groupHit) &&
     getDomLayerPatchTarget(groupHit, activeCompositionPath)
   )
     return groupHit;
 
   const fallback = getEventTargetElement(doc.elementFromPoint(localPointer.x, localPointer.y));
   if (!fallback || !getDomLayerPatchTarget(fallback, activeCompositionPath)) return null;
+  if (isElementOrAncestorLocked(fallback)) return null;
   if (hasAuthorPointerEventsNone(fallback)) return null;
   if (!isElementComputedVisible(fallback)) return null;
   if (isFullBleedTarget(fallback, localPointer.viewport)) return null;

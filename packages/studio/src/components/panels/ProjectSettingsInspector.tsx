@@ -27,6 +27,83 @@ export const ProjectSettingsInspector = memo(function ProjectSettingsInspector({
   } | null>(null);
   const [layersExpanded, setLayersExpanded] = useState(true);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [handoffAudio, setHandoffAudio] = useState<{
+    durationSeconds?: number;
+    ceilingFrames?: number;
+    frameAlignedSeconds?: number;
+    fileName?: string;
+  } | null>(null);
+  const [syncingDuration, setSyncingDuration] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  const fetchHandoffAudio = useCallback(() => {
+    if (!projectId) return;
+    studioApiFetch(buildProjectApiPath(projectId, "/handoff"))
+      .then((res) => (res && res.ok ? res.json() : null))
+      .then(
+        (data: {
+          handoff?: {
+            audio?: {
+              frameEndpoint?: { frameAlignedSeconds: number; ceilingFrames: number };
+              fileName?: string;
+              durationSeconds?: number;
+            };
+          };
+        } | null) => {
+          if (data?.handoff?.audio) {
+            const a = data.handoff.audio;
+            setHandoffAudio({
+              durationSeconds: a.durationSeconds,
+              frameAlignedSeconds: a.frameEndpoint?.frameAlignedSeconds ?? a.durationSeconds,
+              ceilingFrames: a.frameEndpoint?.ceilingFrames,
+              fileName: a.fileName,
+            });
+          }
+        },
+      )
+      .catch(() => {});
+  }, [projectId]);
+
+  useEffect(() => {
+    fetchHandoffAudio();
+  }, [fetchHandoffAudio]);
+
+  const handleSyncDuration = useCallback(async () => {
+    if (!projectId) return;
+    setSyncingDuration(true);
+    setSyncStatus("Syncing...");
+    try {
+      const res = await studioApiFetch(buildProjectApiPath(projectId, "/handoff/sync-duration"), {
+        method: "POST",
+      });
+      if (res && res.ok) {
+        const json = (await res.json()) as {
+          ok: boolean;
+          durationSynced?: number;
+          ceilingFrames?: number;
+          error?: string;
+        };
+        if (json.ok && json.durationSynced) {
+          usePlayerStore.setState({ duration: json.durationSynced });
+          setSyncStatus(`✓ In sync (${json.durationSynced}s)`);
+          fetchHandoffAudio();
+          const iframe = document.querySelector<HTMLIFrameElement>(
+            "iframe[data-testid='preview-iframe'], iframe",
+          );
+          iframe?.contentWindow?.location.reload();
+        } else {
+          setSyncStatus(`Error: ${json.error || "Failed"}`);
+        }
+      } else {
+        setSyncStatus("Failed to sync");
+      }
+    } catch (err) {
+      setSyncStatus(`Error: ${String(err)}`);
+    } finally {
+      setSyncingDuration(false);
+      setTimeout(() => setSyncStatus(null), 4000);
+    }
+  }, [projectId, fetchHandoffAudio]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -153,9 +230,32 @@ export const ProjectSettingsInspector = memo(function ProjectSettingsInspector({
 
         <div className="grid grid-cols-[100px_1fr] items-baseline gap-2">
           <span className="text-panel-text-3">Duration:</span>
-          <span className="font-mono text-panel-text-1 tabular-nums">
-            {duration > 0 ? `${duration.toFixed(2)}s (${totalFrames}f)` : "—"}
-          </span>
+          <div className="flex flex-col gap-1">
+            <span className="font-mono text-panel-text-1 tabular-nums">
+              {duration > 0 ? `${duration.toFixed(2)}s (${totalFrames}f)` : "—"}
+            </span>
+            {handoffAudio?.frameAlignedSeconds &&
+              Math.abs(duration - handoffAudio.frameAlignedSeconds) > 0.05 && (
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    data-testid="sync-narration-duration-btn"
+                    onClick={() => void handleSyncDuration()}
+                    disabled={syncingDuration}
+                    className="flex items-center gap-1 rounded bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/30 transition-colors cursor-pointer"
+                    title={`Sync project duration to narration audio (${handoffAudio.frameAlignedSeconds}s / ${handoffAudio.ceilingFrames ?? 0}f)`}
+                  >
+                    <span>⚡ Sync to Audio ({handoffAudio.frameAlignedSeconds}s)</span>
+                  </button>
+                  {syncStatus && (
+                    <span className="text-[10px] text-panel-text-3 font-mono">{syncStatus}</span>
+                  )}
+                </div>
+              )}
+            {syncStatus && !handoffAudio && (
+              <span className="text-[10px] text-panel-text-3 font-mono">{syncStatus}</span>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-[100px_1fr] items-baseline gap-2">

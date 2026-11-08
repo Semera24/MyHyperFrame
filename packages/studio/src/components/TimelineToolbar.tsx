@@ -1,5 +1,6 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ArrowsClockwise,
   ArrowsOutLineHorizontal,
   Crop,
   FrameCorners,
@@ -13,13 +14,7 @@ import {
 import { useOptionalNLEContext } from "./nle/NLEContext";
 import { useStudioShellContextOptional } from "../contexts/StudioContext";
 import { useCropPresetBarStore } from "./editor/cropPresetStore";
-import {
-  AI_AGENTS,
-  formatAllOpenPinsPromptForAgent,
-  useCanvasCommentsStore,
-  type TargetAiAgent,
-} from "./editor/canvasCommentsStore";
-import { targetAgentToEngine, useAgentAssistantStore } from "./panels/AgentAssistantPanel";
+import { useCanvasCommentsStore } from "./editor/canvasCommentsStore";
 import {
   detectUnbundleCandidate,
   groupSelectedElementsIntoLayer,
@@ -239,8 +234,6 @@ export const TimelineToolbar = memo(function TimelineToolbar({
   const cycleBackdropMode = useDocumentaryQcOverlayStore((s) => s.cycleBackdropMode);
   const commentModeActive = useCanvasCommentsStore((s) => s.commentModeActive);
   const toggleCommentMode = useCanvasCommentsStore((s) => s.toggleCommentMode);
-  const selectedAgent = useCanvasCommentsStore((s) => s.selectedAgent);
-  const setSelectedAgent = useCanvasCommentsStore((s) => s.setSelectedAgent);
   const canvasPins = useCanvasCommentsStore((s) => s.pins);
   const topComp = nle?.compositionStack.at(-1);
   const activeCompPath =
@@ -254,6 +247,33 @@ export const TimelineToolbar = memo(function TimelineToolbar({
     .toUpperCase();
   const activeSelection = domEditSession?.domEditSelection ?? null;
   const unbundleCandidate = detectUnbundleCandidate(activeSelection?.element ?? null);
+
+  const handleSyncTimelineDuration = useCallback(async () => {
+    const projectId = shell?.projectId;
+    if (!projectId) return;
+    try {
+      const res = await studioApiFetch(buildProjectApiPath(projectId, "/handoff/sync-duration"), {
+        method: "POST",
+      });
+      if (res && res.ok) {
+        const json = (await res.json()) as {
+          ok: boolean;
+          durationSynced?: number;
+          ceilingFrames?: number;
+          error?: string;
+        };
+        if (json.ok && json.durationSynced) {
+          usePlayerStore.setState({ duration: json.durationSynced });
+          shell?.showToast(`✓ Synced timeline to ${json.durationSynced}s (${json.ceilingFrames}f)`);
+          shell?.previewIframeRef?.current?.contentWindow?.location.reload();
+        } else {
+          shell?.showToast(`Sync failed: ${json.error || "Unknown error"}`, "error");
+        }
+      }
+    } catch {
+      shell?.showToast("Failed to sync duration", "error");
+    }
+  }, [shell]);
 
   // Resolve all selected DOM elements for Group action (single selection or multi-selected timeline/canvas elements)
   const resolveSelectedDomElements = (): HTMLElement[] => {
@@ -396,6 +416,17 @@ export const TimelineToolbar = memo(function TimelineToolbar({
               className={rippleEditEnabled ? flatActive : flatIdle}
             >
               <RippleEditIcon size={16} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Sync timeline duration to narration audio">
+            <button
+              type="button"
+              data-testid="timeline-sync-duration-button"
+              onClick={() => void handleSyncTimelineDuration()}
+              aria-label="Sync timeline duration to narration audio"
+              className={flatIdle}
+            >
+              <ArrowsClockwise size={16} weight="bold" />
             </button>
           </Tooltip>
           {projectHasAudio && (

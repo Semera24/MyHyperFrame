@@ -192,4 +192,35 @@ describe("previewClipPct", () => {
       }),
     ).toBeLessThan(60);
   });
+
+  it("magnetically snaps to playhead or target percentages when within threshold", () => {
+    // 200px clip width: 8px threshold is (8 / 200) * 100 = 4%
+    // Move from 40% to 48.5% (dx = +17px -> +8.5%). Target at 50% is within 4% (1.5% away)
+    const snapped = previewClipPct({
+      pointerDownX: 0,
+      pointerMoveX: 17,
+      clipWidthPx: 200,
+      draggedClipPct: 40,
+      draggedIndex: 1,
+      sortedClipPcts: [10, 40, 90],
+      snapTargetsPct: [50],
+    });
+    expect(snapped).toBe(50);
+  });
+});
+
+describe("resolveKeyframeDrag magnetic snapping", () => {
+  it("snaps to target percentage within threshold and commits move", () => {
+    const result = resolveKeyframeDrag({
+      pointerDownX: 0,
+      pointerUpX: 18,
+      clipWidthPx: 200,
+      draggedClipPct: 40,
+      draggedIndex: 1,
+      sortedClipPcts: [10, 40, 90],
+      snapTargetsPct: [50],
+    });
+    expect(result.kind).toBe("move");
+    expect(result.toClipPct).toBe(50);
+  });
 });

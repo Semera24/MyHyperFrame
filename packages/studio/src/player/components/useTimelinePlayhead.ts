@@ -221,7 +221,7 @@ export function useTimelinePlayhead({
       const el = scrollRef.current;
       if (!el || effectiveDuration <= 0) return;
       const rect = el.getBoundingClientRect();
-      const time = getTimelineScrubTime({
+      const rawTime = getTimelineScrubTime({
         clientX,
         viewportLeft: rect.left,
         scrollLeft: el.scrollLeft,
@@ -229,6 +229,61 @@ export function useTimelinePlayhead({
         pixelsPerSecond: pps,
         duration: effectiveDuration,
       });
+
+      let time = rawTime;
+      const snapEnabled = usePlayerStore.getState().timelineSnapEnabled;
+      if (snapEnabled && pps > 0) {
+        const SNAP_THRESHOLD_PX = 8;
+        const thresholdSec = SNAP_THRESHOLD_PX / pps;
+        let bestTarget: number | null = null;
+        let minDiff = thresholdSec;
+
+        // Snap to project start (0) and end
+        for (const boundary of [0, effectiveDuration]) {
+          const diff = Math.abs(rawTime - boundary);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestTarget = boundary;
+          }
+        }
+
+        // Snap to element start and end boundaries (cuts / scene transitions)
+        const elements = usePlayerStore.getState().elements;
+        for (const elem of elements) {
+          const start = elem.start;
+          const end = elem.start + elem.duration;
+          for (const pt of [start, end]) {
+            const diff = Math.abs(rawTime - pt);
+            if (diff < minDiff) {
+              minDiff = diff;
+              bestTarget = pt;
+            }
+          }
+        }
+
+        // Snap to keyframe times
+        const keyframesMap = usePlayerStore.getState().keyframes;
+        if (keyframesMap) {
+          for (const [elemId, kfData] of keyframesMap.entries()) {
+            const elem = elements.find((e) => (e.key ?? e.id) === elemId || e.id === elemId);
+            if (elem && kfData?.keyframes) {
+              for (const kf of kfData.keyframes) {
+                const kfTime = elem.start + (kf.percentage / 100) * elem.duration;
+                const diff = Math.abs(rawTime - kfTime);
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  bestTarget = kfTime;
+                }
+              }
+            }
+          }
+        }
+
+        if (bestTarget !== null) {
+          time = bestTarget;
+        }
+      }
+
       liveTime.notify(time);
       onSeek?.(time);
     },

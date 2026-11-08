@@ -13,6 +13,8 @@
 
 /** Screen-px the pointer must travel before a press counts as a drag (else click). */
 export const KEYFRAME_DRAG_THRESHOLD_PX = 4;
+/** Screen-px within which a dragged keyframe snaps to a target (playhead, 0%, 100%). */
+export const KEYFRAME_SNAP_THRESHOLD_PX = 8;
 /** Clip-% movement below this is treated as no change (drop == original). */
 const NOOP_EPSILON_PCT = 0.1;
 /** Gap (clip-%) kept between a dragged interior keyframe and each neighbour so it
@@ -20,6 +22,27 @@ const NOOP_EPSILON_PCT = 0.1;
 const NEIGHBOR_EPSILON_PCT = 0.5;
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
+export function applyKeyframeSnap(
+  pct: number,
+  clipWidthPx: number,
+  snapTargetsPct?: ReadonlyArray<number>,
+): number {
+  if (!snapTargetsPct || snapTargetsPct.length === 0 || clipWidthPx <= 0) return pct;
+  const thresholdPct = (KEYFRAME_SNAP_THRESHOLD_PX / clipWidthPx) * 100;
+  let bestTarget: number | null = null;
+  let minDiff = thresholdPct;
+
+  for (const target of snapTargetsPct) {
+    const diff = Math.abs(pct - target);
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestTarget = target;
+    }
+  }
+
+  return bestTarget !== null ? bestTarget : pct;
+}
 
 /**
  * Clamp a dragged keyframe's clip-% strictly between its immediate neighbours
@@ -71,12 +94,16 @@ export function resolveKeyframeDrag(opts: {
   draggedClipPct: number;
   draggedIndex: number;
   sortedClipPcts: ReadonlyArray<number>;
+  snapTargetsPct?: ReadonlyArray<number>;
 }): KeyframeDragResult {
   const dx = opts.pointerUpX - opts.pointerDownX;
   if (Math.abs(dx) < KEYFRAME_DRAG_THRESHOLD_PX || opts.clipWidthPx <= 0) {
     return { kind: "click" };
   }
-  const rawClipPct = opts.draggedClipPct + (dx / opts.clipWidthPx) * 100;
+  let rawClipPct = opts.draggedClipPct + (dx / opts.clipWidthPx) * 100;
+  if (opts.snapTargetsPct) {
+    rawClipPct = applyKeyframeSnap(rawClipPct, opts.clipWidthPx, opts.snapTargetsPct);
+  }
   const toClipPct = clampToNeighbors(rawClipPct, opts.sortedClipPcts, opts.draggedIndex);
   if (Math.abs(toClipPct - opts.draggedClipPct) < NOOP_EPSILON_PCT) return { kind: "noop" };
   return { kind: "move", toClipPct };
@@ -94,12 +121,13 @@ export function previewClipPct(opts: {
   draggedClipPct: number;
   draggedIndex: number;
   sortedClipPcts: ReadonlyArray<number>;
+  snapTargetsPct?: ReadonlyArray<number>;
 }): number {
   if (opts.clipWidthPx <= 0) return opts.draggedClipPct;
   const dx = opts.pointerMoveX - opts.pointerDownX;
-  return clampToNeighbors(
-    opts.draggedClipPct + (dx / opts.clipWidthPx) * 100,
-    opts.sortedClipPcts,
-    opts.draggedIndex,
-  );
+  let rawClipPct = opts.draggedClipPct + (dx / opts.clipWidthPx) * 100;
+  if (opts.snapTargetsPct) {
+    rawClipPct = applyKeyframeSnap(rawClipPct, opts.clipWidthPx, opts.snapTargetsPct);
+  }
+  return clampToNeighbors(rawClipPct, opts.sortedClipPcts, opts.draggedIndex);
 }

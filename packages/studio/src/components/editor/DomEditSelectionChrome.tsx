@@ -179,7 +179,10 @@ export function DomEditSelectionChrome({
   // moved and characters can never be selected by dragging.
   const editing = inlineText?.editing ?? false;
   const readOnly = usePreviewReadOnly();
-  const canManipulate = allowCanvasMovement && !readOnly;
+  const isElementLocked =
+    selection.element.hasAttribute("data-locked") ||
+    selection.element.hasAttribute("data-timeline-locked");
+  const canManipulate = allowCanvasMovement && !readOnly && !isElementLocked;
 
   return (
     <>

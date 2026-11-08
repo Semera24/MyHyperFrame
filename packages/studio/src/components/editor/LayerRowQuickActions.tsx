@@ -1,8 +1,10 @@
 import type React from "react";
+import { LockSimple, LockSimpleOpen } from "@phosphor-icons/react";
 import { HiddenToggleIcon } from "../../player/components/hiddenToggle";
 import {
   detectUnbundleCandidate,
   toggleDomLayerHidden,
+  toggleDomLayerLocked,
   unbundleElementContainer,
 } from "../../utils/studioLayerActions";
 import { isLayerDraggable, type LayerReorderEvent } from "./useLayerDrag";
@@ -26,6 +28,9 @@ export function LayerRowQuickActions({
   onReloadPreview?: () => void;
 }) {
   const isHidden = layer.element.hasAttribute("data-hidden");
+  const isLocked =
+    layer.element.hasAttribute("data-locked") ||
+    layer.element.hasAttribute("data-timeline-locked");
   const draggable = isLayerDraggable(layer);
   const siblings = draggable
     ? allLayers.filter(
@@ -103,6 +108,36 @@ export function LayerRowQuickActions({
           </button>
         </>
       )}
+      <button
+        type="button"
+        aria-label={isLocked ? `Unlock ${layer.label}` : `Lock ${layer.label}`}
+        title={
+          isLocked
+            ? "Unlock layer (enable canvas selection and edits)"
+            : "Lock layer (prevent accidental selection/movement on canvas)"
+        }
+        data-testid={`lock-toggle-${layer.key}`}
+        onClick={() => {
+          void toggleDomLayerLocked({
+            element: layer.element,
+            projectId,
+            activeCompPath,
+          }).then(() => {
+            onRefreshLayers();
+          });
+        }}
+        className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
+          isLocked
+            ? "text-amber-400 hover:bg-panel-hover hover:text-amber-300"
+            : "text-panel-text-4 hover:bg-panel-hover hover:text-panel-text-1"
+        }`}
+      >
+        {isLocked ? (
+          <LockSimple size={12} weight="fill" aria-hidden="true" />
+        ) : (
+          <LockSimpleOpen size={12} weight="regular" aria-hidden="true" />
+        )}
+      </button>
       <button
         type="button"
         aria-label={isHidden ? `Show ${layer.label}` : `Hide ${layer.label}`}

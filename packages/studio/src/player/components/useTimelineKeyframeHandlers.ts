@@ -285,6 +285,22 @@ export function beginTimelineKeyframeRetime(
     actor.pointerId === null || event.pointerId === actor.pointerId;
   const pointerXWithScroll = () =>
     actor.lastClientX + (viewport?.scrollLeft ?? 0) - actor.originScrollLeft;
+  const getSnapTargetsPct = (): number[] | undefined => {
+    const snapEnabled = usePlayerStore.getState().timelineSnapEnabled;
+    if (!snapEnabled) return undefined;
+    const targets = [0, 100];
+    const store = usePlayerStore.getState();
+    const element = store.elements.find(
+      (e) => (e.key ?? e.id) === actor.elementId || e.id === actor.elementId,
+    );
+    if (element && element.duration > 0) {
+      const playheadPct = ((store.currentTime - element.start) / element.duration) * 100;
+      if (playheadPct >= 0 && playheadPct <= 100) {
+        targets.push(playheadPct);
+      }
+    }
+    return targets;
+  };
   const publishPreview = () => {
     publishRetimePreview(coordinator, {
       keyframeKey: actor.keyframeKey,
@@ -295,6 +311,7 @@ export function beginTimelineKeyframeRetime(
         draggedClipPct: actor.fromClipPercentage,
         draggedIndex: actor.draggedIndex,
         sortedClipPcts: actor.sortedClipPercentages,
+        snapTargetsPct: getSnapTargetsPct(),
       }),
     });
   };
@@ -423,6 +440,7 @@ export function beginTimelineKeyframeRetime(
       draggedClipPct: actor.fromClipPercentage,
       draggedIndex: actor.draggedIndex,
       sortedClipPcts: actor.sortedClipPercentages,
+      snapTargetsPct: getSnapTargetsPct(),
     });
     if (result.kind === "move" && result.toClipPct !== undefined) {
       commitMove(result.toClipPct);
