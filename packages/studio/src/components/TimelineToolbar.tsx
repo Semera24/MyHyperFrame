@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "
 import {
   ArrowsClockwise,
   ArrowsOutLineHorizontal,
+  ChatTeardropText,
   Crop,
   FrameCorners,
   Image,
@@ -275,6 +276,33 @@ export const TimelineToolbar = memo(function TimelineToolbar({
     }
   }, [shell]);
 
+  const handleGenerateViralCaptions = useCallback(async () => {
+    const projectId = shell?.projectId;
+    if (!projectId) return;
+    try {
+      shell?.showToast("Generating dynamic viral karaoke captions...", "info");
+      const res = await studioApiFetch(
+        buildProjectApiPath(projectId, "/handoff/generate-viral-captions"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stylePreset: "hormozi", wordsPerGroup: 3 }),
+        },
+      );
+      if (res && res.ok) {
+        const json = (await res.json()) as { ok: boolean; wordCount?: number; error?: string };
+        if (json.ok) {
+          shell?.showToast(`✓ Generated ${json.wordCount ?? 0} viral karaoke captions!`, "info");
+          shell?.previewIframeRef?.current?.contentWindow?.location.reload();
+        } else {
+          shell?.showToast(`Caption generation failed: ${json.error || "Unknown error"}`, "error");
+        }
+      }
+    } catch {
+      shell?.showToast("Failed to generate captions", "error");
+    }
+  }, [shell]);
+
   // Resolve all selected DOM elements for Group action (single selection or multi-selected timeline/canvas elements)
   const resolveSelectedDomElements = (): HTMLElement[] => {
     const doc = activeSelection?.element?.ownerDocument;
@@ -427,6 +455,17 @@ export const TimelineToolbar = memo(function TimelineToolbar({
               className={flatIdle}
             >
               <ArrowsClockwise size={16} weight="bold" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Generate Dynamic Viral Karaoke Captions (Hormozi / Neon / Clean)">
+            <button
+              type="button"
+              data-testid="timeline-viral-captions-button"
+              onClick={() => void handleGenerateViralCaptions()}
+              aria-label="Generate Dynamic Viral Karaoke Captions"
+              className={flatIdle}
+            >
+              <ChatTeardropText size={16} weight="bold" />
             </button>
           </Tooltip>
           {projectHasAudio && (

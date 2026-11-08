@@ -179,6 +179,9 @@ export function studioAgentToolsDeps(
       multipleTimelines: false,
       unsupportedTimelinePattern: false,
     }),
+    getCurrentTime: () => 0,
+    reloadPreview: () => undefined,
+    showToast: () => undefined,
     ...overrides,
   };
 }

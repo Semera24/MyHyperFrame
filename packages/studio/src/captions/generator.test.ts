@@ -250,6 +250,14 @@ describe("generateCaptionHtml", () => {
       expect(html).toContain("dataset.end");
     });
 
+    it("includes word-by-word active and dim karaoke tweens for every segment", () => {
+      const model = buildTestModel();
+      const html = generateCaptionHtml(model);
+      expect(html).toContain("Karaoke active highlight");
+      expect(html).toContain("scale: 1.15");
+      expect(html).toContain("scale: 1");
+    });
+
     it("wraps everything in an IIFE", () => {
       const model = buildTestModel();
       const html = generateCaptionHtml(model);

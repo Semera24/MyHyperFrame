@@ -79,6 +79,29 @@ import {
   type StudioDeleteAnimationResult,
   type StudioUpdateAnimationResult,
 } from "./tools/animationTools";
+import {
+  studioGenerateCaptions,
+  studioSplitClip,
+  studioRemoveSilence,
+  studioInsertBroll,
+  STUDIO_GENERATE_CAPTIONS_DESCRIPTION,
+  STUDIO_GENERATE_CAPTIONS_INPUT_SCHEMA,
+  STUDIO_SPLIT_CLIP_DESCRIPTION,
+  STUDIO_SPLIT_CLIP_INPUT_SCHEMA,
+  STUDIO_REMOVE_SILENCE_DESCRIPTION,
+  STUDIO_REMOVE_SILENCE_INPUT_SCHEMA,
+  STUDIO_INSERT_BROLL_DESCRIPTION,
+  STUDIO_INSERT_BROLL_INPUT_SCHEMA,
+  type TimelineMacroToolDeps,
+  type StudioGenerateCaptionsInput,
+  type StudioGenerateCaptionsResult,
+  type StudioSplitClipInput,
+  type StudioSplitClipResult,
+  type StudioRemoveSilenceInput,
+  type StudioRemoveSilenceResult,
+  type StudioInsertBrollInput,
+  type StudioInsertBrollResult,
+} from "./tools/timelineMacroTools";
 
 const log = makeStudioDebugLogger("webmcp");
 
@@ -99,7 +122,8 @@ export interface StudioAgentToolsDeps
     InspectToolDeps,
     ContentToolDeps,
     TransformToolDeps,
-    AnimationToolDeps {
+    AnimationToolDeps,
+    TimelineMacroToolDeps {
   /** Read Studio's current state. Called per tool invocation, never cached. */
   getSnapshot: () => StudioLookSnapshot;
 }
@@ -269,6 +293,47 @@ export function buildStudioTools(depsRef: {
       execute: writeTool<StudioDeleteAnimationResult>(
         "studio_delete_animation",
         (deps, input, signal) => studioDeleteAnimation(deps, input, signal),
+      ),
+    },
+    {
+      name: "studio_generate_captions",
+      title: "Generate dynamic viral karaoke captions",
+      description: STUDIO_GENERATE_CAPTIONS_DESCRIPTION,
+      inputSchema: STUDIO_GENERATE_CAPTIONS_INPUT_SCHEMA,
+      annotations: { readOnlyHint: false },
+      execute: writeTool<StudioGenerateCaptionsResult>(
+        "studio_generate_captions",
+        (deps, input) => studioGenerateCaptions(deps, input as StudioGenerateCaptionsInput),
+      ),
+    },
+    {
+      name: "studio_split_clip",
+      title: "Split timeline clip at timestamp",
+      description: STUDIO_SPLIT_CLIP_DESCRIPTION,
+      inputSchema: STUDIO_SPLIT_CLIP_INPUT_SCHEMA,
+      annotations: { readOnlyHint: false },
+      execute: writeTool<StudioSplitClipResult>("studio_split_clip", (deps, input) =>
+        studioSplitClip(deps, input as StudioSplitClipInput),
+      ),
+    },
+    {
+      name: "studio_remove_silence",
+      title: "Auto-trim dead gaps and silent pauses",
+      description: STUDIO_REMOVE_SILENCE_DESCRIPTION,
+      inputSchema: STUDIO_REMOVE_SILENCE_INPUT_SCHEMA,
+      annotations: { readOnlyHint: false },
+      execute: writeTool<StudioRemoveSilenceResult>("studio_remove_silence", (deps, input) =>
+        studioRemoveSilence(deps, input as StudioRemoveSilenceInput),
+      ),
+    },
+    {
+      name: "studio_insert_broll",
+      title: "Insert B-Roll visual overlay",
+      description: STUDIO_INSERT_BROLL_DESCRIPTION,
+      inputSchema: STUDIO_INSERT_BROLL_INPUT_SCHEMA,
+      annotations: { readOnlyHint: false },
+      execute: writeTool<StudioInsertBrollResult>("studio_insert_broll", (deps, input) =>
+        studioInsertBroll(deps, input as StudioInsertBrollInput),
       ),
     },
   ];

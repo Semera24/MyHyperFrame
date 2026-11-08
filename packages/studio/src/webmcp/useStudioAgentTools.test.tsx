@@ -13,6 +13,27 @@ vi.mock("../telemetry/client", () => ({ trackEvent }));
 
 Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
 
+if (typeof window.localStorage === "undefined" || !window.localStorage?.clear) {
+  const store = new Map<string, string>();
+  const storage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+    clear: () => {
+      store.clear();
+    },
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  } as unknown as Storage;
+  Object.defineProperty(window, "localStorage", { value: storage, writable: true });
+}
+
 let cleanup: (() => void) | null = null;
 
 async function executeRegistered<T>(
@@ -135,6 +156,10 @@ describe("useStudioAgentTools", () => {
       "studio_update_animation",
       "studio_add_keyframe",
       "studio_delete_animation",
+      "studio_generate_captions",
+      "studio_split_clip",
+      "studio_remove_silence",
+      "studio_insert_broll",
     ]);
     expect(trackEvent).toHaveBeenCalledWith("webmcp.native_present");
   });
@@ -149,7 +174,7 @@ describe("useStudioAgentTools", () => {
     await act(async () => {
       harness = mountTools(studioAgentToolsDeps({ getSnapshot: () => lookSnapshot() }));
     });
-    expect(registerTool).toHaveBeenCalledTimes(12);
+    expect(registerTool).toHaveBeenCalledTimes(16);
 
     await act(async () => {
       harness?.rerenderWith(
@@ -160,7 +185,7 @@ describe("useStudioAgentTools", () => {
       );
     });
 
-    expect(registerTool).toHaveBeenCalledTimes(12);
+    expect(registerTool).toHaveBeenCalledTimes(16);
   });
 
   it("executes against the LATEST deps, not the ones present at registration", async () => {
@@ -235,7 +260,7 @@ describe("useStudioAgentTools", () => {
       mountTools(studioAgentToolsDeps({ getSnapshot: () => lookSnapshot() }));
     });
 
-    expect(registerTool).toHaveBeenCalledTimes(12);
+    expect(registerTool).toHaveBeenCalledTimes(16);
   });
 
   it("reports a non-abort registration failure through production telemetry", async () => {
@@ -389,6 +414,10 @@ describe("useStudioAgentTools", () => {
       "studio_update_animation",
       "studio_add_keyframe",
       "studio_delete_animation",
+      "studio_generate_captions",
+      "studio_split_clip",
+      "studio_remove_silence",
+      "studio_insert_broll",
     ]);
     for (const tool of writeTools) {
       // One argument, exactly as the polyfill calls it. An empty input is a bad

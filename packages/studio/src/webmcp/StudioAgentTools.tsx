@@ -58,7 +58,8 @@ export function resizeSelectionFromAgent(
  * every animation frame during playback for a value nothing here displays.
  */
 export function StudioAgentTools() {
-  const { projectId, activeCompPath, editHistory, writeBlockedReason } = useStudioShellContext();
+  const { projectId, activeCompPath, editHistory, writeBlockedReason, showToast } =
+    useStudioShellContext();
   const {
     domEditSelection,
     activeGroupElement,
@@ -179,6 +180,11 @@ export function StudioAgentTools() {
         multipleTimelines: gsapMultipleTimelines,
         unsupportedTimelinePattern: gsapUnsupportedTimelinePattern,
       }),
+      getCurrentTime: () => usePlayerStore.getState().currentTime,
+      reloadPreview: () => {
+        previewIframeRef.current?.contentWindow?.location.reload();
+      },
+      showToast: (msg, tone) => showToast?.(msg, tone === "success" ? "info" : tone),
     }),
     [
       getSnapshot,
@@ -186,6 +192,7 @@ export function StudioAgentTools() {
       buildDomSelectionFromTarget,
       applyDomSelection,
       projectId,
+      showToast,
       activeCompPath,
       writeBlockedReason,
       handleDomTextCommitForSelection,

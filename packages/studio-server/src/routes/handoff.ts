@@ -962,4 +962,471 @@ Delivered: ${dateStr} at ${new Date().toLocaleTimeString()}
       return c.json({ ok: false, error: String(err) }, 500);
     }
   });
+
+  // 5. POST /api/projects/:id/handoff/generate-viral-captions — Generate Dynamic Word-by-Word Karaoke Captions
+  api.post("/projects/:id/handoff/generate-viral-captions", async (c) => {
+    const projectId = c.req.param("id");
+    let project = await adapter.resolveProject(projectId);
+    if (!project) {
+      const all = await adapter.listProjects();
+      project = all.find((p) => p.id === projectId) ?? null;
+    }
+    const rawDir = project?.dir || process.cwd();
+    const epRoot = resolveEpisodeRoot(rawDir);
+
+    let body: { stylePreset?: "hormozi" | "neon" | "clean"; wordsPerGroup?: number } = {};
+    try {
+      body = await c.req.json();
+    } catch {
+      /* ignore empty body */
+    }
+
+    const preset = body.stylePreset || "hormozi";
+    const wordsPerGroup =
+      typeof body.wordsPerGroup === "number" && body.wordsPerGroup > 0
+        ? body.wordsPerGroup
+        : preset === "neon"
+          ? 2
+          : preset === "clean"
+            ? 4
+            : 3;
+
+    // Locate index.html
+    const sourcesIndex = existsSync(join(epRoot, "Sources", "index.html"))
+      ? join(epRoot, "Sources", "index.html")
+      : join(epRoot, "index.html");
+
+    if (!existsSync(sourcesIndex)) {
+      return c.json({ ok: false, error: "index.html not found" }, 404);
+    }
+
+    // Determine compositions directory
+    const compDir = existsSync(join(epRoot, "Sources", "compositions"))
+      ? join(epRoot, "Sources", "compositions")
+      : join(epRoot, "compositions");
+    if (!existsSync(compDir)) {
+      await mkdir(compDir, { recursive: true });
+    }
+
+    // Determine audio duration
+    let duration = 24;
+    const audioDir = existsSync(join(epRoot, "Audio"))
+      ? join(epRoot, "Audio")
+      : existsSync(join(epRoot, "assets"))
+        ? join(epRoot, "assets")
+        : join(epRoot, "Sources", "assets");
+    const audioFiles = existsSync(audioDir)
+      ? readdirSync(audioDir).filter((f) => /\.(mp3|wav|m4a|aac)$/i.test(f))
+      : [];
+    if (audioFiles.length > 0) {
+      const probe = inspectAudioWithFfprobe(join(audioDir, audioFiles[0]!));
+      if (probe && probe.durationSeconds) duration = probe.durationSeconds;
+    }
+
+    // Determine words from timing JSON or speech transcript
+    const timingDir = join(epRoot, "Timing");
+    let transcriptWords: Array<{ text: string; start: number; end: number; id?: string }> = [];
+
+    if (existsSync(timingDir)) {
+      try {
+        const tf = readdirSync(timingDir).find((f) => f.endsWith(".json"));
+        if (tf) {
+          const content = JSON.parse(readFileSync(join(timingDir, tf), "utf-8")) as {
+            words?: Array<{ word?: string; text?: string; start: number; end: number }>;
+          };
+          if (Array.isArray(content.words) && content.words.length > 0) {
+            transcriptWords = content.words
+              .map((w, i) => ({
+                id: `w${i}`,
+                text: w.text || w.word || "",
+                start: Number(w.start),
+                end: Number(w.end),
+              }))
+              .filter((w) => w.text.length > 0);
+          }
+        }
+      } catch {
+        /* fallback below */
+      }
+    }
+
+    if (transcriptWords.length === 0) {
+      const samplePhrases = [
+        "Which moment turned crisis",
+        "into a turning point",
+        "in world power?",
+        "Every turning point",
+        "begins with a question.",
+        "When the pressure mounted,",
+        "leaders faced a choice",
+        "that shaped humanity.",
+        "Everything changed forever.",
+        "Turning Point Stories.",
+      ];
+      const allWords = samplePhrases.join(" ").split(/\s+/).filter(Boolean);
+      const wordDuration = Math.min(0.48, Math.max(0.24, (duration - 0.5) / (allWords.length + 2)));
+      let cursor = 0.3;
+      transcriptWords = allWords.map((word, i) => {
+        const start = Number(cursor.toFixed(2));
+        const end = Number((cursor + wordDuration * 0.85).toFixed(2));
+        cursor += wordDuration;
+        return { id: `w${i}`, text: word, start, end };
+      });
+    }
+
+    // Chunk words into groups
+    const groups: Array<Array<{ text: string; start: number; end: number; id: string }>> = [];
+    for (let i = 0; i < transcriptWords.length; i += wordsPerGroup) {
+      groups.push(
+        transcriptWords.slice(i, i + wordsPerGroup).map((w, idx) => ({
+          ...w,
+          id: w.id || `w${i + idx}`,
+        })),
+      );
+    }
+
+    const presetStyles = {
+      hormozi: {
+        fontSize: "54px",
+        fontFamily: "Inter, Montserrat, sans-serif",
+        fontWeight: "900",
+        textTransform: "uppercase",
+        activeColor: "#FFE600",
+        dimColor: "rgba(255, 255, 255, 0.45)",
+        stroke: "-webkit-text-stroke: 3px #000000;",
+        shadow: "text-shadow: 0 4px 10px rgba(0,0,0,0.9), 0 2px 4px #000000;",
+        bg: "transparent",
+        boxShadow: "none",
+        border: "none",
+        scalePop: "1.22",
+      },
+      neon: {
+        fontSize: "50px",
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontWeight: "800",
+        textTransform: "uppercase",
+        activeColor: "#00F0FF",
+        dimColor: "rgba(140, 200, 255, 0.35)",
+        stroke: "-webkit-text-stroke: 1px rgba(0, 240, 255, 0.6);",
+        shadow: "text-shadow: 0 0 16px rgba(0, 240, 255, 0.9), 0 0 32px rgba(0, 240, 255, 0.5);",
+        bg: "rgba(5, 12, 24, 0.8)",
+        boxShadow: "0 0 24px rgba(0, 240, 255, 0.3)",
+        border: "1px solid rgba(0, 240, 255, 0.4)",
+        scalePop: "1.16",
+      },
+      clean: {
+        fontSize: "44px",
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontWeight: "700",
+        textTransform: "none",
+        activeColor: "#FFFFFF",
+        dimColor: "rgba(255, 255, 255, 0.5)",
+        stroke: "",
+        shadow: "text-shadow: 0 2px 6px rgba(0,0,0,0.8);",
+        bg: "rgba(0, 0, 0, 0.7)",
+        boxShadow: "none",
+        border: "none",
+        scalePop: "1.08",
+      },
+    }[preset];
+
+    const groupElements: string[] = [];
+    const timelineTweens: string[] = [];
+
+    groups.forEach((chunk, gi) => {
+      const gId = `group_${gi}`;
+      const gStart = chunk[0]!.start;
+      const gEnd = chunk[chunk.length - 1]!.end;
+
+      const spans = chunk
+        .map((w) => {
+          return `<span class="word clip" id="${w.id}" data-start="${w.start}" data-end="${w.end}" style="display:inline-block;margin:0 0.22em;color:${presetStyles.dimColor};transform-origin:center center;">${w.text}</span>`;
+        })
+        .join("");
+
+      groupElements.push(
+        `<div class="caption-group clip" id="${gId}" data-start="${gStart}" data-end="${gEnd}" style="opacity:0;position:absolute;left:50%;top:78%;transform:translate(-50%, -50%);display:flex;flex-wrap:wrap;justify-content:center;align-items:center;padding:12px 28px;background:${presetStyles.bg};border-radius:14px;${presetStyles.border};box-shadow:${presetStyles.boxShadow};font-family:${presetStyles.fontFamily};font-size:${presetStyles.fontSize};font-weight:${presetStyles.fontWeight};text-transform:${presetStyles.textTransform};${presetStyles.stroke};${presetStyles.shadow};max-width:90%;">\n        ${spans}\n      </div>`,
+      );
+
+      timelineTweens.push(
+        `tl.to("#${gId}", { opacity: 1, duration: 0.18, ease: "power2.out" }, ${gStart});`,
+      );
+      chunk.forEach((w) => {
+        const dur = Math.max(0.08, w.end - w.start);
+        const popDur = Math.min(0.12, Number((dur * 0.4).toFixed(3)));
+        timelineTweens.push(
+          `tl.to("#${w.id}", { color: "${presetStyles.activeColor}", scale: ${presetStyles.scalePop}, duration: ${popDur}, ease: "back.out(2)" }, ${w.start});`,
+        );
+        timelineTweens.push(
+          `tl.to("#${w.id}", { color: "${presetStyles.dimColor}", scale: 1.0, duration: ${popDur}, ease: "power1.in" }, ${w.end});`,
+        );
+      });
+      timelineTweens.push(
+        `tl.to("#${gId}", { opacity: 0, duration: 0.18, ease: "power2.in" }, ${Math.max(gStart + 0.1, gEnd - 0.18)});`,
+      );
+    });
+
+    const captionHtml = `<template id="captions-template">
+  <div data-composition-id="captions" data-width="1920" data-height="1080" data-duration="${duration.toFixed(2)}">
+    <div id="captions-container" style="position:absolute;inset:0;pointer-events:none;">
+      ${groupElements.join("\n      ")}
+    </div>
+    <script>
+      (function() {
+        const tl = gsap.timeline({ paused: true });
+        ${timelineTweens.join("\n        ")}
+        window.__timelines = window.__timelines || {};
+        window.__timelines.captions = tl;
+      })();
+    </script>
+  </div>
+</template>
+`;
+
+    const captionsFile = join(compDir, "captions.html");
+    await writeFile(captionsFile, captionHtml, "utf-8");
+
+    let indexHtml = readFileSync(sourcesIndex, "utf-8");
+    if (!indexHtml.includes("compositions/captions.html")) {
+      const relativeCompSrc = "compositions/captions.html";
+      const captionsMount = `<div class="clip" data-hf-id="hf-captions-host" id="captions-host" data-composition-id="captions" data-composition="captions" data-composition-src="${relativeCompSrc}" data-src="${relativeCompSrc}" data-track-kind="captions" data-start="0" data-duration="${duration.toFixed(2)}" data-track-index="9"></div>`;
+
+      if (indexHtml.includes('id="master-stage"')) {
+        indexHtml = indexHtml.replace(
+          /(<div\b[^>]*id=["']master-stage["'][^>]*>)/i,
+          `$1\n    ${captionsMount}`,
+        );
+      } else if (indexHtml.includes('id="root"')) {
+        indexHtml = indexHtml.replace(/(<div\b[^>]*id=["']root["'][^>]*>)/i, `$1\n    ${captionsMount}`);
+      } else {
+        indexHtml = indexHtml.replace(/(<\/body>)/i, `  ${captionsMount}\n$1`);
+      }
+      await writeFile(sourcesIndex, indexHtml, "utf-8");
+    }
+
+    return c.json({
+      ok: true,
+      captionFile: "compositions/captions.html",
+      wordCount: transcriptWords.length,
+      groupCount: groups.length,
+      preset,
+      duration,
+    });
+  });
+
+  // 6. POST /api/projects/:id/handoff/macro/split-clip
+  api.post("/projects/:id/handoff/macro/split-clip", async (c) => {
+    const projectId = c.req.param("id");
+    let project = await adapter.resolveProject(projectId);
+    if (!project) {
+      const all = await adapter.listProjects();
+      project = all.find((p) => p.id === projectId) ?? null;
+    }
+    const rawDir = project?.dir || process.cwd();
+    const epRoot = resolveEpisodeRoot(rawDir);
+    const sourcesIndex = existsSync(join(epRoot, "Sources", "index.html"))
+      ? join(epRoot, "Sources", "index.html")
+      : join(epRoot, "index.html");
+
+    if (!existsSync(sourcesIndex)) {
+      return c.json({ ok: false, error: "index.html not found" }, 404);
+    }
+
+    const { time, clipId } = await c.req.json<{ time: number; clipId?: string }>();
+    if (typeof time !== "number" || time < 0) {
+      return c.json({ ok: false, error: "Valid split time (seconds) is required" }, 400);
+    }
+
+    let html = readFileSync(sourcesIndex, "utf-8");
+    const clipRegex = /<div\b([^>]*\bclass=["'][^"']*\bclip\b[^"']*["'][^>]*)>/gi;
+    let match: RegExpExecArray | null;
+    let targetClipTag: string | null = null;
+    let clipStart = 0;
+    let clipDuration = 0;
+    let matchedId = "";
+
+    while ((match = clipRegex.exec(html)) !== null) {
+      const fullTag = match[0];
+      if (fullTag.includes('id="root"') || fullTag.includes('id="master-stage"')) continue;
+
+      const startM = fullTag.match(/\bdata-start=["']([0-9.]+)["']/i);
+      const durM = fullTag.match(/\bdata-duration=["']([0-9.]+)["']/i);
+      const idM = fullTag.match(/\b(?:id|data-hf-id)=["']([^"']+)["']/i);
+      const thisId = idM ? idM[1]! : "";
+
+      if (clipId && thisId !== clipId && !fullTag.includes(clipId)) continue;
+
+      if (startM && durM) {
+        const s = Number.parseFloat(startM[1]!);
+        const d = Number.parseFloat(durM[1]!);
+        if (time > s && time < s + d) {
+          targetClipTag = fullTag;
+          clipStart = s;
+          clipDuration = d;
+          matchedId = thisId;
+          break;
+        }
+      }
+    }
+
+    if (!targetClipTag) {
+      return c.json({ ok: false, error: `No active clip spans timestamp ${time}s` }, 404);
+    }
+
+    const firstDuration = (time - clipStart).toFixed(3);
+    const secondDuration = (clipStart + clipDuration - time).toFixed(3);
+    const newId = `clip_${Date.now().toString(36)}`;
+
+    const updatedFirstTag = targetClipTag.replace(
+      /(\bdata-duration=["'])[0-9.]+(["'])/i,
+      `$1${firstDuration}$2`,
+    );
+
+    const secondTag = targetClipTag
+      .replace(/(\bdata-start=["'])[0-9.]+(["'])/i, `$1${time.toFixed(3)}$2`)
+      .replace(/(\bdata-duration=["'])[0-9.]+(["'])/i, `$1${secondDuration}$2`)
+      .replace(/\b(?:id|data-hf-id)=["'][^"']+["']/i, `id="${newId}" data-hf-id="hf-${newId}"`);
+
+    html = html.replace(targetClipTag, `${updatedFirstTag}</div>\n    ${secondTag}`);
+    await writeFile(sourcesIndex, html, "utf-8");
+
+    return c.json({
+      ok: true,
+      splitTime: time,
+      originalClipId: matchedId || "clip-left",
+      newClipId: newId,
+      firstDuration: Number(firstDuration),
+      secondDuration: Number(secondDuration),
+    });
+  });
+
+  // 7. POST /api/projects/:id/handoff/macro/remove-silence
+  api.post("/projects/:id/handoff/macro/remove-silence", async (c) => {
+    const projectId = c.req.param("id");
+    let project = await adapter.resolveProject(projectId);
+    if (!project) {
+      const all = await adapter.listProjects();
+      project = all.find((p) => p.id === projectId) ?? null;
+    }
+    const rawDir = project?.dir || process.cwd();
+    const epRoot = resolveEpisodeRoot(rawDir);
+    const sourcesIndex = existsSync(join(epRoot, "Sources", "index.html"))
+      ? join(epRoot, "Sources", "index.html")
+      : join(epRoot, "index.html");
+
+    if (!existsSync(sourcesIndex)) {
+      return c.json({ ok: false, error: "index.html not found" }, 404);
+    }
+
+    const { minPauseSeconds = 0.5 } = await c.req
+      .json<{ minPauseSeconds?: number }>()
+      .catch(() => ({ minPauseSeconds: 0.5 }));
+
+    let html = readFileSync(sourcesIndex, "utf-8");
+    const clipRegex = /<div\b([^>]*\bclass=["'][^"']*\bclip\b[^"']*["'][^>]*)>/gi;
+    let match: RegExpExecArray | null;
+    interface ClipInfo {
+      fullTag: string;
+      start: number;
+      duration: number;
+    }
+    const clips: ClipInfo[] = [];
+
+    while ((match = clipRegex.exec(html)) !== null) {
+      const fullTag = match[0];
+      if (fullTag.includes('id="root"') || fullTag.includes('id="master-stage"')) continue;
+      const startM = fullTag.match(/\bdata-start=["']([0-9.]+)["']/i);
+      const durM = fullTag.match(/\bdata-duration=["']([0-9.]+)["']/i);
+      if (startM && durM) {
+        clips.push({
+          fullTag,
+          start: Number.parseFloat(startM[1]!),
+          duration: Number.parseFloat(durM[1]!),
+        });
+      }
+    }
+
+    clips.sort((a, b) => a.start - b.start);
+    let gapsRemoved = 0;
+    let timeSaved = 0;
+
+    for (let i = 0; i < clips.length - 1; i++) {
+      const current = clips[i]!;
+      const next = clips[i + 1]!;
+      const gap = next.start - (current.start + current.duration);
+      if (gap >= minPauseSeconds) {
+        gapsRemoved++;
+        timeSaved += gap;
+        const newNextStart = (current.start + current.duration).toFixed(3);
+        const updatedNextTag = next.fullTag.replace(
+          /(\bdata-start=["'])[0-9.]+(["'])/i,
+          `$1${newNextStart}$2`,
+        );
+        html = html.replace(next.fullTag, updatedNextTag);
+        next.start = Number(newNextStart);
+      }
+    }
+
+    if (gapsRemoved > 0) {
+      await writeFile(sourcesIndex, html, "utf-8");
+    }
+
+    return c.json({
+      ok: true,
+      gapsRemoved,
+      timeSavedSeconds: Number(timeSaved.toFixed(3)),
+    });
+  });
+
+  // 8. POST /api/projects/:id/handoff/macro/insert-broll
+  api.post("/projects/:id/handoff/macro/insert-broll", async (c) => {
+    const projectId = c.req.param("id");
+    let project = await adapter.resolveProject(projectId);
+    if (!project) {
+      const all = await adapter.listProjects();
+      project = all.find((p) => p.id === projectId) ?? null;
+    }
+    const rawDir = project?.dir || process.cwd();
+    const epRoot = resolveEpisodeRoot(rawDir);
+    const sourcesIndex = existsSync(join(epRoot, "Sources", "index.html"))
+      ? join(epRoot, "Sources", "index.html")
+      : join(epRoot, "index.html");
+
+    if (!existsSync(sourcesIndex)) {
+      return c.json({ ok: false, error: "index.html not found" }, 404);
+    }
+
+    const { src, startTime, duration, title } = await c.req.json<{
+      src: string;
+      startTime: number;
+      duration: number;
+      title?: string;
+    }>();
+
+    if (!src || typeof startTime !== "number" || typeof duration !== "number") {
+      return c.json({ ok: false, error: "src, startTime, and duration are required" }, 400);
+    }
+
+    const layerId = `broll_${Date.now().toString(36)}`;
+    const label = title || basename(src);
+    const brollTag = `<div class="clip broll-overlay" data-hf-id="hf-${layerId}" id="${layerId}" data-start="${startTime}" data-duration="${duration}" data-track-index="5" style="position:absolute;left:100px;top:100px;width:720px;height:405px;z-index:40;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.8);"><img src="${src}" alt="${label}" style="width:100%;height:100%;object-fit:cover;" /></div>`;
+
+    let html = readFileSync(sourcesIndex, "utf-8");
+    if (html.includes('id="master-stage"')) {
+      html = html.replace(/(<div\b[^>]*id=["']master-stage["'][^>]*>)/i, `$1\n    ${brollTag}`);
+    } else if (html.includes('id="root"')) {
+      html = html.replace(/(<div\b[^>]*id=["']root["'][^>]*>)/i, `$1\n    ${brollTag}`);
+    } else {
+      html = html.replace(/(<\/body>)/i, `  ${brollTag}\n$1`);
+    }
+
+    await writeFile(sourcesIndex, html, "utf-8");
+    return c.json({
+      ok: true,
+      layerId,
+      startTime,
+      duration,
+      src,
+    });
+  });
 }

@@ -339,6 +339,22 @@ function generateJs(model: CaptionModel): string {
       ].join("\n");
     }
 
+    // Dynamic word-by-word karaoke highlight tweens
+    const karaokeLines: string[] = [];
+    for (const seg of groupSegments) {
+      const segVar = `w_${seg.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+      const wordDur = Math.max(0.08, seg.end - seg.start);
+      const activeColor = seg.style.activeColor || group.style.activeColor || "#ffe600";
+      const dimColor = seg.style.dimColor || group.style.dimColor || "rgba(255, 255, 255, 0.4)";
+      const popDur = Math.min(0.12, Number((wordDur * 0.4).toFixed(3)));
+
+      karaokeLines.push(
+        `  // Karaoke active highlight`,
+        `  tl.to(${segVar}, { color: '${activeColor}', scale: 1.15, duration: ${popDur}, ease: 'back.out(2)' }, ${seg.start});`,
+        `  tl.to(${segVar}, { color: '${dimColor}', scale: 1.0, duration: ${popDur}, ease: 'power1.in' }, ${seg.end});`,
+      );
+    }
+
     const block = [
       `// Group: ${groupId}`,
       `const ${groupVarName} = document.createElement('div');`,
@@ -350,6 +366,7 @@ function generateJs(model: CaptionModel): string {
       positionLines,
       `// Entrance: fade in at group start`,
       `tl.to(${groupVarName}, { opacity: 1, duration: 0.2, ease: 'power2.out' }, ${groupStart});`,
+      karaokeLines.join("\n"),
       `// Exit: fade out at group end`,
       `tl.to(${groupVarName}, { opacity: 0, duration: 0.2, ease: 'power2.in' }, ${groupEnd} - 0.2);`,
     ].join("\n");
