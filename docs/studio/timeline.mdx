@@ -1,0 +1,62 @@
+---
+title: "Edit timing on the timeline"
+description: "Move, trim, split and align clips in the HyperFrames browser editor, and what each timeline button does."
+---
+
+The timeline sets when each thing appears and how long it stays. Every change saves straight to the project files.
+
+<Frame caption="The selected clip edge changes its duration while the canvas and neighboring tracks remain visible.">
+  <img
+    src="https://static.heygen.ai/hyperframes-oss/docs/images/studio/timeline-v1.jpg"
+    alt="HyperFrames browser editor timeline with the edge of a selected clip ready to trim"
+  />
+</Frame>
+
+## Move, trim, split
+
+- **Move:** drag the middle of a clip. Its length stays the same.
+- **Trim:** drag the left edge to change when it starts, the right edge to change when it ends.
+- **Split:** put the playhead where you want the cut and choose **Split at playhead**, or press **B** for the Split tool
+  and click the clip (Shift-click splits every clip at that time). Press **V** to go back to Select.
+- **Copy, Duplicate, Delete:** right-click a clip.
+
+After any change, play across it: entrances, exits and narration don't rewrite themselves.
+
+## The toolbar
+
+| Button | What it does |
+| --- | --- |
+| **Linked Selection** | Clicks and edits reach every clip linked to the one you touch, such as a video and its sound |
+| **Snapping** | Edges snap to the playhead, other clips and beats |
+| **Ripple edit** | On by default: deleting a clip on the main track closes the gap instead of leaving one |
+| **Audio meters** | Shows levels while it plays |
+| **Add keyframe at playhead** / **Auto-record** | Keyframes for animation; see [animation](/studio/canvas#animate-with-keyframes) |
+| **Add beat at playhead** | A timing marker to cut to, handy with music |
+| **Select leftward / rightward** (**[** and **]**, in the tool menu) | Selects every clip that starts before, or after, the playhead, to shift a whole section |
+
+To add media, drop a file on the timeline (**Drop media here**). To work inside a nested scene, expand it or open it
+and use the breadcrumb to come back; check whether you're changing its inner timing or its place in the whole video.
+
+Undo (⌘Z) covers moves, trims and splits.
+
+<Accordion title="Keyboard and screen reader navigation">
+
+Tab into the timeline to reach its current logical focus target. Use Left and Right to move within that row. Use Up and Down to move to the nearest target at the same time in the previous or next row.
+
+Home and End move to the start or end of the focused row. Hold Command or Ctrl to move to the first or last logical row. Page Up and Page Down move by one visible page of rows.
+
+On an expandable track row, Right expands collapsed keyframe property lanes and Left collapses expanded lanes. From a keyframe property row, Left returns to its parent track row. Enter or Space toggles the same lanes. Use the Context Menu key or Shift + F10 to open the focused target's menu when it has one.
+
+The timeline keeps only one logical timeline target in the Tab order. Native header controls, such as visibility and keyframe actions, remain separate Tab stops. When the logical target is outside the virtualized viewport, the browser editor keeps it mounted, scrolls it into view, and then restores focus.
+
+Screen readers receive the timeline as a treegrid. Track rows announce their level and expanded state. Clips and keyframes announce their names, times, and selection state. Easing controls announce their names and times.
+
+The full list is in [keyboard shortcuts](/studio/index#timeline-navigation).
+
+</Accordion>
+
+## Related topics
+
+- [Edit the frame](/studio/canvas)
+- [Edit animation and keyframes](/studio/canvas#animate-with-keyframes)
+- [Keyboard shortcuts](/studio/index#keyboard-shortcuts)

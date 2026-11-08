@@ -1,0 +1,193 @@
+import { describe, expect, it } from "vitest";
+import {
+  CubeLutParseError,
+  fitCubeLutToTexture,
+  packCubeLutToRgba8,
+  parseCubeLut,
+  type CubeLut3D,
+} from "./colorLuts";
+
+const IDENTITY_2 = `
+# comment
+TITLE "Identity 2"
+DOMAIN_MIN 0 0 0
+DOMAIN_MAX 1 1 1
+LUT_3D_SIZE 2
+0 0 0
+1 0 0
+0 1 0
+1 1 0
+0 0 1
+1 0 1
+0 1 1
+1 1 1
+`;
+
+describe("cube LUT parsing", () => {
+  it("parses a 3D cube LUT with title, domain, and red-fastest data order", () => {
+    const lut = parseCubeLut(IDENTITY_2);
+
+    expect(lut.title).toBe("Identity 2");
+    expect(lut.size).toBe(2);
+    expect(lut.domainMin).toEqual([0, 0, 0]);
+    expect(lut.domainMax).toEqual([1, 1, 1]);
+    expect(Array.from(lut.data.slice(0, 12))).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]);
+  });
+
+  it("packs 3D LUT data into a WebGL1-friendly 2D RGBA texture", () => {
+    const packed = packCubeLutToRgba8(parseCubeLut(IDENTITY_2));
+
+    expect(packed.width).toBe(4);
+    expect(packed.height).toBe(2);
+    expect(Array.from(packed.data.slice(0, 16))).toEqual([
+      0, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 255, 0, 255, 255,
+    ]);
+  });
+
+  it("accepts DaVinci/IRIDAS-style 3D input ranges", () => {
+    const lut = parseCubeLut(`
+      TITLE "Resolve Range"
+      LUT_3D_SIZE 2
+      LUT_3D_INPUT_RANGE 0 1
+      0 0 0
+      1 0 0
+      0 1 0
+      1 1 0
+      0 0 1
+      1 0 1
+      0 1 1
+      1 1 1
+    `);
+
+    expect(lut.title).toBe("Resolve Range");
+    expect(lut.domainMin).toEqual([0, 0, 0]);
+    expect(lut.domainMax).toEqual([1, 1, 1]);
+  });
+
+  it("rejects inverted 3D input ranges at the range line", () => {
+    expect(() =>
+      parseCubeLut(`
+        LUT_3D_SIZE 2
+        LUT_3D_INPUT_RANGE 1 0
+      `),
+    ).toThrow("LUT_3D_INPUT_RANGE max must exceed min");
+  });
+
+  it("rejects unsupported 1D cube LUTs", () => {
+    expect(() =>
+      parseCubeLut(`
+        LUT_1D_SIZE 2
+        0 0 0
+        1 1 1
+      `),
+    ).toThrow("1D cube LUTs are not supported yet");
+  });
+
+  it("rejects mixed 1D and 3D cube LUTs", () => {
+    expect(() =>
+      parseCubeLut(`
+        LUT_1D_SIZE 2
+        LUT_3D_SIZE 2
+        0 0 0
+        1 0 0
+        0 1 0
+        1 1 0
+        0 0 1
+        1 0 1
+        0 1 1
+        1 1 1
+      `),
+    ).toThrow("Mixed 1D and 3D cube LUTs are not supported yet");
+  });
+
+  it("rejects row count mismatches and oversize LUTs", () => {
+    expect(() =>
+      parseCubeLut(`
+        LUT_3D_SIZE 2
+        0 0 0
+      `),
+    ).toThrow("Expected 8 LUT rows");
+
+    expect(() => parseCubeLut("LUT_3D_SIZE 66")).toThrow("LUT_3D_SIZE 66 exceeds max 65");
+  });
+
+  it("accepts the 65-point cube that grading tools export", () => {
+    const rows = Array.from({ length: 65 ** 3 }, () => "0 0 0").join("\n");
+    expect(parseCubeLut(`LUT_3D_SIZE 65\n${rows}`).size).toBe(65);
+  });
+
+  it("reports invalid numbers as cube parse errors", () => {
+    expect(() =>
+      parseCubeLut(`
+        LUT_3D_SIZE 2
+        nope 0 0
+      `),
+    ).toThrow(CubeLutParseError);
+  });
+});
+
+function identityCube(size: number): CubeLut3D {
+  const data = new Float32Array(size ** 3 * 3);
+  for (let b = 0; b < size; b++)
+    for (let g = 0; g < size; g++)
+      for (let r = 0; r < size; r++) {
+        const at = ((b * size + g) * size + r) * 3;
+        data.set([r / (size - 1), g / (size - 1), b / (size - 1)], at);
+      }
+  return { title: null, size, domainMin: [0, 0, 0], domainMax: [1, 1, 1], data };
+}
+
+describe("fitCubeLutToTexture", () => {
+  it("resamples a cube whose packed row is wider than the texture limit, keeping an identity identity", () => {
+    const fitted = fitCubeLutToTexture(identityCube(65), 4096);
+
+    expect(fitted.size).toBe(64);
+    expect(packCubeLutToRgba8(fitted).width).toBeLessThanOrEqual(4096);
+    const expected = identityCube(64).data;
+    const worst = expected.reduce((m, v, i) => Math.max(m, Math.abs(v - fitted.data[i]!)), 0);
+    expect(worst).toBeLessThan(1e-5);
+  });
+
+  it("keeps the domain and title of the cube it resamples", () => {
+    const cube = {
+      ...identityCube(5),
+      title: "warm",
+      domainMin: [0, 0, 0.1],
+      domainMax: [1, 2, 3],
+    };
+
+    const fitted = fitCubeLutToTexture(cube as CubeLut3D, 16);
+
+    expect(fitted).toMatchObject({
+      size: 4,
+      title: "warm",
+      domainMin: [0, 0, 0.1],
+      domainMax: [1, 2, 3],
+    });
+  });
+
+  it("interpolates between the source points rather than dropping some", () => {
+    const cube = identityCube(5);
+    [0, 0, 1, 1, 1].forEach((red, r) => {
+      cube.data[r * 3] = red;
+    });
+
+    const fitted = fitCubeLutToTexture(cube, 16);
+
+    const alongRed = [0, 1, 2, 3].map((r) => fitted.data[r * 3]!);
+    expect(alongRed[0]).toBeCloseTo(0, 5);
+    expect(alongRed[1]).toBeCloseTo(1 / 3, 5);
+    expect(alongRed[2]).toBeCloseTo(1, 5);
+    expect(alongRed[3]).toBeCloseTo(1, 5);
+  });
+
+  it.each([
+    ["a cube that already fits", 64, 4096],
+    ["a texture limit it could not read", 65, Number.NaN],
+    ["a texture limit of zero", 65, 0],
+  ])("returns the same cube for %s", (_label, size, limit) => {
+    const cube = identityCube(size);
+
+    expect(fitCubeLutToTexture(cube, limit)).toBe(cube);
+  });
+});

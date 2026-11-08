@@ -1,0 +1,62 @@
+import { constants } from "node:os";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+const os = vi.hoisted(() => ({ setPriority: vi.fn() }));
+vi.mock("node:os", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:os")>()),
+  setPriority: os.setPriority,
+}));
+vi.mock("./utils/lintProject.js", () => ({ lintProject: vi.fn(async () => ({ ok: true })) }));
+
+beforeEach(() => {
+  vi.resetModules();
+  os.setPriority.mockReset();
+  process.argv[2] = "lint";
+  process.env.HYPERFRAMES_RENDER_SETUP_INPUT = JSON.stringify({ projectDir: "/project" });
+});
+afterEach(() => vi.restoreAllMocks());
+
+it("lints at the lowest CPU priority so it never competes with a Studio boot", async () => {
+  const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+  await import("./renderSetupWorker.js");
+
+  expect(os.setPriority).toHaveBeenCalledWith(constants.priority.PRIORITY_LOW);
+  expect(write).toHaveBeenCalledWith(expect.stringContaining('{"ok":true}'));
+});
+
+const nodeSystemErrorWithOsCodeInInfo = (code: string) =>
+  Object.assign(new Error(`A system error occurred: uv_os_setpriority returned ${code}`), {
+    code: "ERR_SYSTEM_ERROR",
+    info: { code, syscall: "uv_os_setpriority" },
+  });
+
+it.each(["EPERM", "EACCES"])(
+  "still lints, saying nothing, when a sandbox refuses lowering the priority (%s)",
+  async (code) => {
+    os.setPriority.mockImplementation(() => {
+      throw nodeSystemErrorWithOsCodeInInfo(code);
+    });
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await import("./renderSetupWorker.js");
+
+    expect(write).toHaveBeenCalledWith(expect.stringContaining('{"ok":true}'));
+    expect(warn).not.toHaveBeenCalled();
+  },
+);
+
+it("still names any other priority failure, and lints", async () => {
+  os.setPriority.mockImplementation(() => {
+    throw nodeSystemErrorWithOsCodeInInfo("ESRCH");
+  });
+  const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+  await import("./renderSetupWorker.js");
+
+  expect(write).toHaveBeenCalledWith(expect.stringContaining('{"ok":true}'));
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining("ESRCH"));
+});

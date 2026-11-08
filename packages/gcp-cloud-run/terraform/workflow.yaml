@@ -1,0 +1,177 @@
+# HyperFrames Plan v2 distributed render orchestration on Cloud Workflows.
+#
+#   Plan → BuildChunkList → RenderChunks (parallel) → Assemble
+#
+# Every step POSTs to the same Cloud Run service URL and varies only the
+# body's Action. Plan v2 is the only supported transport.
+
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - serviceUrl: ${args.ServiceUrl}
+          - projectGcsUri: ${args.ProjectGcsUri}
+          - planOutputGcsPrefix: ${args.PlanOutputGcsPrefix}
+          - outputGcsUri: ${args.OutputGcsUri}
+          - config: ${args.Config}
+          - planProtocol: ${default(map.get(args, "PlanProtocol"), "v2")}
+
+    - checkPlanProtocol:
+        switch:
+          - condition: ${planProtocol == "v2"}
+            next: plan
+        next: unsupportedPlanProtocol
+
+    - unsupportedPlanProtocol:
+        raise:
+          code: PLAN_PROTOCOL_UNSUPPORTED
+          message: ${"PlanProtocol must be v2 or absent; got " + string(planProtocol)}
+
+    - plan:
+        try:
+          call: http.post
+          args:
+            url: ${serviceUrl}
+            timeout: 1800
+            auth:
+              type: OIDC
+              audience: ${serviceUrl}
+            body:
+              Action: plan
+              PlanProtocol: v2
+              ProjectGcsUri: ${projectGcsUri}
+              PlanOutputGcsPrefix: ${planOutputGcsPrefix}
+              Config: ${config}
+          result: planResp
+        retry:
+          predicate: ${retryable}
+          max_retries: 6
+          backoff:
+            initial_delay: 2
+            max_delay: 60
+            multiplier: 2
+
+    - capturePlan:
+        assign:
+          - planResult: ${planResp.body}
+          - chunkCount: ${planResp.body.ChunkCount}
+
+    - validatePlanResult:
+        switch:
+          - condition: ${planResult.PlanProtocol == "v2" and ("PlanV2ManifestGcsUri" in planResult) and ("PlanV2ArtifactGcsPrefix" in planResult) and not("PlanGcsUri" in planResult) and chunkCount > 0}
+            next: buildChunkList
+        next: invalidPlanResult
+
+    - invalidPlanResult:
+        raise:
+          code: PLAN_RESULT_INVALID
+          message: "Plan response did not satisfy the Plan v2 locator contract or produced no chunks."
+
+    - buildChunkList:
+        assign:
+          - chunkIndexes: []
+          - chunkUris: []
+          - chunkResults: []
+
+    - fillLists:
+        for:
+          value: i
+          range: [0, ${chunkCount - 1}]
+          steps:
+            - appendSlots:
+                assign:
+                  - chunkIndexes: ${list.concat(chunkIndexes, i)}
+                  - chunkUris: ${list.concat(chunkUris, "")}
+                  - chunkResults: ${list.concat(chunkResults, "")}
+
+    - renderChunks:
+        parallel:
+          shared: [chunkUris, chunkResults]
+          concurrency_limit: ${math.min(chunkCount, 20)}
+          for:
+            value: idx
+            in: ${chunkIndexes}
+            steps:
+              - renderOneChunk:
+                  try:
+                    call: http.post
+                    args:
+                      url: ${serviceUrl}
+                      timeout: 1800
+                      auth:
+                        type: OIDC
+                        audience: ${serviceUrl}
+                      body:
+                        Action: renderChunk
+                        PlanProtocol: v2
+                        ChunkIndex: ${idx}
+                        PlanV2ManifestGcsUri: ${planResult.PlanV2ManifestGcsUri}
+                        PlanV2ArtifactGcsPrefix: ${planResult.PlanV2ArtifactGcsPrefix}
+                        PlanHash: ${planResult.PlanHash}
+                        ChunkOutputGcsPrefix: ${planOutputGcsPrefix}
+                        Format: ${planResult.Format}
+                    result: chunkResp
+                  retry:
+                    predicate: ${retryable}
+                    max_retries: 4
+                    backoff:
+                      initial_delay: 2
+                      max_delay: 60
+                      multiplier: 2
+              - storeChunk:
+                  assign:
+                    - chunkUris[idx]: ${chunkResp.body.ChunkGcsUri}
+                    - chunkResults[idx]: ${chunkResp.body}
+
+    - assemble:
+        try:
+          call: http.post
+          args:
+            url: ${serviceUrl}
+            timeout: 1800
+            auth:
+              type: OIDC
+              audience: ${serviceUrl}
+            body:
+              Action: assemble
+              PlanProtocol: v2
+              PlanV2ManifestGcsUri: ${planResult.PlanV2ManifestGcsUri}
+              PlanV2ArtifactGcsPrefix: ${planResult.PlanV2ArtifactGcsPrefix}
+              PlanHash: ${planResult.PlanHash}
+              ChunkGcsUris: ${chunkUris}
+              AudioGcsUri: null
+              OutputGcsUri: ${outputGcsUri}
+              Format: ${planResult.Format}
+              Cfr: ${("cfr" in config) and config.cfr}
+          result: assembleResp
+        retry:
+          predicate: ${retryable}
+          max_retries: 4
+          backoff:
+            initial_delay: 2
+            max_delay: 60
+            multiplier: 2
+
+    - done:
+        return:
+          Plan: ${planResult}
+          Chunks: ${chunkResults}
+          Assemble: ${assembleResp.body}
+
+# Retry transient/server failures, never handler-classified HTTP 400s.
+retryable:
+  params: [e]
+  steps:
+    - classify:
+        switch:
+          - condition: ${not("code" in e)}
+            return: true
+          - condition: ${e.code == 429}
+            return: true
+          - condition: ${e.code == 403}
+            return: true
+          - condition: ${e.code >= 500 and e.code < 600}
+            return: true
+    - nonRetryable:
+        return: false

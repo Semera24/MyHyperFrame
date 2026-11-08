@@ -1,0 +1,100 @@
+---
+title: "Add images and video clips"
+sidebarTitle: "Images and video"
+description: "Put a picture or a clip into a HyperFrames video, then place, trim, crop or swap it: ask the agent, drag it in, or write two attributes."
+---
+
+import { DocsVideo } from "/snippets/docs-video.jsx";
+
+Put a picture or a clip into your video three ways: ask the agent, drag it into the editor, or write it in the HTML.
+All three change the same file, so you can mix them.
+
+<DocsVideo
+  title="The five basic moves: import, place, crop, trim, and swap the source"
+  src="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/media-basics-demo-v1.mp4"
+  poster="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/media-basics-demo-v1.jpg"
+/>
+
+*Import, place, crop, trim, then swap the file: the crop, timing and placement stay as they were.*
+
+## Ask the agent
+
+Name the file and say what should happen, in terms of what you see:
+
+```text
+Use assets/product-tour.mp4 from 00:04 to 00:10, muted.
+Crop around the editor canvas and place it under the captions.
+```
+
+The agent copies the file into the project if it isn't there yet. In the Studio app, add the file to your message
+with **+** or drop it into the chat.
+
+## Drag it in
+
+In the browser editor (`npx hyperframes preview`), open **Assets**, choose **Import media** or drop the file into the
+panel, then drag it onto the timeline. Images, SVG, MP4, WebM and MOV work.
+
+<Frame caption="The browser editor today, changing the real project: inspect the source, change Fit and Position, crop on the canvas, then import another local asset.">
+  <video
+    autoPlay
+    loop
+    muted
+    playsInline
+    preload="metadata"
+    poster="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/studio-media-edit-loop-v1.jpg"
+    src="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/studio-media-edit-loop-v4.mp4"
+  />
+</Frame>
+
+## Write it in the HTML
+
+A picture on screen for 3 seconds, and a muted clip that plays 6 seconds of its source starting at second 4:
+
+```html
+<img class="clip" src="assets/logo.svg"
+     data-start="0" data-duration="3" data-track-index="1" />
+
+<video class="clip" src="assets/product-tour.mp4" muted playsinline
+       data-start="3" data-duration="6" data-media-start="4" data-track-index="0"></video>
+```
+
+`class="clip"` lets the timeline show and hide it; `data-start` and `data-duration` say when; `data-media-start`
+trims the start of the source. Keep a clip's sound with `data-has-audio="true"` and set its level with
+`data-volume`. To move or scale a video, animate a wrapper around it, not the video itself. Every attribute is in
+the [HTML schema](/reference/html-schema).
+
+## Swap the file
+
+Ask the agent to use the new file, or change `src`. Then check the crop, the length and anything that moved with
+the old picture. If the new file changes the story, ask for that bigger change instead.
+
+## Keep it working everywhere
+
+Copy every file into the project and give it a clear name (`pricing-page-scroll.mp4`). Links that expire or need a
+login break the render on another computer. `npx hyperframes check` finds missing and late-loading files.
+
+Before you export, watch once and check the first and last frame of each clip, the crop at the final size, and
+that nothing looks stretched.
+
+## More media tasks
+
+<CardGroup cols={2}>
+  <Card title="Avatar presenter" icon="user-video" href="/guides/avatar-presenter">
+    Generate or reuse a presenter clip and compose around it.
+  </Card>
+  <Card title="Voice, music, and sound" icon="waveform" href="/guides/voice-and-audio">
+    Build an understandable audio mix.
+  </Card>
+  <Card title="Remove a background" icon="person-rays" href="/guides/remove-background">
+    Isolate a person from a real image or clip.
+  </Card>
+  <Card title="Effects and color grading" icon="wand-magic-sparkles" href="/guides/media-effects">
+    Apply a visual treatment, correct footage, or set a deliberate look.
+  </Card>
+</CardGroup>
+
+## Related topics
+
+- [Use Assets and Catalog in the browser editor](/studio/assets-and-blocks)
+- [Add effects to images and video](/guides/media-effects)
+- [Remove a video background](/guides/remove-background)

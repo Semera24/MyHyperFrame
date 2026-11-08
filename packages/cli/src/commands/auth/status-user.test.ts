@@ -1,0 +1,239 @@
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeStore } from "../../auth/store.js";
+import { setupTempAuthEnv, type EnvFixture } from "../../auth/_test-utils.js";
+import { persistFreshOAuth } from "../../auth/oauth.js";
+import { consumeCommandResult } from "../../utils/commandResult.js";
+
+// Mock only AuthClient so the live /v3/users/me probe is controllable;
+// keep the real store/resolver/user helpers so the test exercises the
+// actual on-disk persisted-user-block surfacing.
+//   - apiReject: throw ErrApi on getCurrentUser (simulates an API blip)
+//   - user:      the live identity returned on success
+const probeState = vi.hoisted(
+  () =>
+    ({ apiReject: false, offline: false, user: { email: "live@example.com" } }) as {
+      apiReject: boolean;
+      offline: boolean;
+      user: Record<string, unknown>;
+    },
+);
+
+vi.mock("../../auth/index.js", async (orig) => {
+  const actual = await orig<typeof import("../../auth/index.js")>();
+  class MockAuthClient {
+    async getCurrentUser(): Promise<Record<string, unknown>> {
+      if (probeState.offline) {
+        const { explainNetworkFailure } = await import("../../utils/networkFailure.js");
+        const lookup = Object.assign(new Error("getaddrinfo ENOTFOUND api.heygen.com"), {
+          code: "ENOTFOUND",
+        });
+        throw explainNetworkFailure(
+          new TypeError("fetch failed", { cause: lookup }),
+          "https://api.heygen.com/v3/users/me",
+        );
+      }
+      if (probeState.apiReject) {
+        const { ErrApi } = await import("../../auth/errors.js");
+        throw ErrApi(503, "service unavailable");
+      }
+      return probeState.user;
+    }
+  }
+  return { ...actual, AuthClient: MockAuthClient };
+});
+
+describe("auth status — persisted user block surface", () => {
+  let envFixture: EnvFixture;
+  let stdout: string[];
+
+  beforeEach(async () => {
+    envFixture = await setupTempAuthEnv("hf-status-99-");
+    probeState.apiReject = false;
+    probeState.offline = false;
+    probeState.user = { email: "live@example.com" };
+    stdout = [];
+    consumeCommandResult();
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdout.push(args.join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    consumeCommandResult();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    await envFixture.restore();
+  });
+
+  async function runStatus(asJson: boolean): Promise<number> {
+    const cmd = (await import("./status.js")).default;
+    await (cmd.run as (ctx: { args: Record<string, unknown> }) => Promise<void>)({
+      args: { json: asJson },
+    });
+    return consumeCommandResult().exitCode;
+  }
+
+  function lastJson(): Record<string, unknown> {
+    return JSON.parse(stdout[stdout.length - 1] ?? "{}");
+  }
+
+  it("reports host-managed OAuth without showing its token or a stored identity", async () => {
+    process.env["HEYGEN_ACCESS_TOKEN"] = "fixture-host-secret";
+    await writeStore({ user: { email: "stored@example.com" } });
+    expect(await runStatus(true)).toBe(0);
+    expect(lastJson()).toMatchObject({ source: "env_oauth", persisted_user: null });
+    expect(await runStatus(false)).toBe(0);
+    expect(stdout.join("\n")).toContain("env (HEYGEN_ACCESS_TOKEN)");
+    expect(stdout.join("\n")).not.toContain("fixture-host-secret");
+    expect(stdout.join("\n")).not.toContain("stored@example.com");
+  });
+
+  async function configureBillingCredential(mode: string): Promise<void> {
+    if (mode === "api_key") {
+      await writeStore({ api_key: "hg_x" });
+      return;
+    }
+    if (mode === "host") {
+      process.env["HEYGEN_ACCESS_TOKEN"] = "host-at";
+      return;
+    }
+    if (mode === "hyperframes_dev") process.env["HYPERFRAMES_ENV"] = "dev";
+    if (mode === "custom") process.env["HYPERFRAMES_OAUTH_CLIENT_ID"] = "custom-client";
+    await persistFreshOAuth({ access_token: "at", refresh_token: "rt" });
+  }
+
+  it.each([
+    ["hyperframes", "hyperframes"],
+    ["hyperframes_dev", "hyperframes"],
+    ["custom", "unknown"],
+    ["host", "unknown"],
+    ["api_key", "heygen"],
+  ])("keeps %s billing distinct from generic account balances", async (mode, product) => {
+    probeState.user = {
+      email: "live@example.com",
+      billing_type: "subscription",
+      wallet: { remaining_balance: 99 },
+      subscription: { plan: "HeyGen Pro" },
+    };
+    await configureBillingCredential(mode);
+    expect(await runStatus(true)).toBe(0);
+    const payload = lastJson();
+    expect(payload["billing_product"]).toBe(product);
+    expect(payload["user"]).toEqual(probeState.user);
+    if (mode !== "api_key") {
+      expect(payload["hyperframes_balance"]).toBeNull();
+      expect(payload["billing_notice"]).toContain("HeyGen account");
+    }
+    stdout = [];
+    expect(await runStatus(false)).toBe(0);
+    const text = stdout.join("\n");
+    if (mode === "hyperframes_dev") expect(text).toContain(join("dev", "credentials"));
+    if (mode === "api_key") {
+      expect(text).toContain("Wallet:");
+      expect(text).toMatch(/^Wallet:\s+99$/m);
+    } else {
+      expect(text).not.toMatch(/^Wallet:/m);
+      expect(text).not.toContain("HeyGen Pro");
+      expect(text).toContain(
+        mode.startsWith("hyperframes")
+          ? "HyperFrames balance unavailable"
+          : "OAuth product not verified",
+      );
+    }
+  });
+
+  it("names `hyperframes` as the plan, not the HeyGen app's, when the HyperFrames plan is shown", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              subscription: { plan_name: "pro", status: "active" },
+              usage: { remaining_units: 25000 },
+            },
+          }),
+        ),
+    );
+    await configureBillingCredential("hyperframes");
+    expect(await runStatus(true)).toBe(0);
+    const payload = lastJson();
+    expect(payload["hyperframes"]).toEqual({ plan: "pro", credits: 25000 });
+    expect(payload["billing_notice"]).toContain("`hyperframes` is the HyperFrames plan");
+    expect(payload["billing_notice"]).not.toContain("unavailable");
+    stdout = [];
+    expect(await runStatus(false)).toBe(0);
+    const text = stdout.join("\n");
+    expect(text).toContain("pro plan, 25,000 credits");
+    expect(text).not.toContain("balance unavailable");
+  });
+
+  it("surfaces the persisted user block (with resolved display_name) for a file credential", async () => {
+    await writeStore({
+      api_key: "hg_x",
+      user: { email: "jane@example.com", first_name: "Jane", last_name: "Doe", username: "jdoe" },
+    });
+
+    const code = await runStatus(true);
+    expect(code).toBe(0);
+    const payload = lastJson();
+    expect(payload["source"]).toBe("file_json");
+    expect(payload["persisted_user"]).toEqual({
+      email: "jane@example.com",
+      first_name: "Jane",
+      last_name: "Doe",
+      username: "jdoe",
+      display_name: "jane@example.com",
+    });
+  });
+
+  it("backwards-compat: a file credential with no user block reports persisted_user: null", async () => {
+    await writeStore({ api_key: "hg_legacy" });
+
+    const code = await runStatus(true);
+    expect(code).toBe(0);
+    const payload = lastJson();
+    expect(payload["persisted_user"]).toBeNull();
+    // The live `user` field (from the API probe) is unchanged / additive.
+    expect(payload["user"]).toEqual({ email: "live@example.com" });
+  });
+
+  it("skips the persisted block for an env-sourced credential (could be a different key)", async () => {
+    // Seed a file-side user block, then resolve via the env key — the
+    // active credential is env, so the file block must NOT be surfaced.
+    await writeStore({ api_key: "hg_file", user: { email: "file-user@example.com" } });
+    process.env["HEYGEN_API_KEY"] = "hg_env_key";
+
+    const code = await runStatus(true);
+    expect(code).toBe(0);
+    const payload = lastJson();
+    expect(payload["source"]).toBe("env");
+    expect(payload["persisted_user"]).toBeNull();
+  });
+
+  it("falls back to the cached identity in human output when the live probe fails", async () => {
+    await writeStore({ api_key: "hg_x", user: { email: "cached@example.com" } });
+    probeState.apiReject = true;
+
+    const code = await runStatus(false);
+    expect(code).toBe(1); // API failure → non-zero exit
+    const text = stdout.join("\n");
+    expect(text).toContain("API check failed");
+    expect(text).toContain("cached@example.com");
+    expect(text).toContain("cached");
+  });
+
+  it("reports an unreachable API as such, with the host and a next step, instead of a bare fetch failure", async () => {
+    await writeStore({ api_key: "hg_x", user: { email: "cached@example.com" } });
+    probeState.offline = true;
+
+    expect(await runStatus(true)).toBe(1);
+    expect(String(lastJson()["api_error"])).toMatch(
+      /^Could not reach api\.heygen\.com: .*offline\. Check the internet connection/,
+    );
+    expect(await runStatus(false)).toBe(1);
+    expect(stdout.join("\n")).toContain("cached@example.com");
+  });
+});

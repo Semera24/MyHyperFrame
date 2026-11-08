@@ -1,0 +1,477 @@
+---
+title: "Inspiration"
+description: "Videos people made, remixed in HyperFrames: launch films, motion graphics and talking-head edits. Find one you like and remix it in the Studio app."
+---
+
+import { RemixShelf } from "/snippets/remix-shelf.jsx";
+import { FilmRows } from "/snippets/film-rows.jsx";
+import { ReplicaCompare } from "/snippets/replica-compare.jsx";
+
+export const motion = [
+  {
+    "id": "jake-pond",
+    "name": "Pond: a new Linux OS",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/jake-pond-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/jake-pond-result.jpg",
+    "handle": "@bflycomputer",
+    "post": "https://x.com/bflycomputer/status/2082496873655648632"
+  },
+  {
+    "id": "jake-lovable",
+    "name": "Lovable: Aesthetics Update",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/jake-lovable-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/jake-lovable-result.jpg",
+    "handle": "@Lovable",
+    "post": "https://x.com/Lovable/status/2053874566460752191"
+  },
+  {
+    "id": "jake-figma-draw",
+    "name": "Figma Draw",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/jake-figma-draw-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/jake-figma-draw-result.jpg",
+    "handle": "@figma",
+    "post": "https://x.com/figma/status/1920168282751185360"
+  },
+  {
+    "id": "remix-anduril",
+    "name": "Anduril: AI Grand Prix",
+    "ratio": "1/1",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-anduril-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-anduril-result.jpg",
+    "handle": "@anduriltech",
+    "post": "https://x.com/anduriltech/status/2016233946607141290"
+  },
+  {
+    "id": "remix-grok-bot",
+    "name": "Grok Bot: now on more plans",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-grok-bot-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-grok-bot-result.jpg",
+    "handle": "@bot",
+    "post": "https://x.com/bot/status/2090852881373311369"
+  },
+  {
+    "id": "remix-kimi-k3",
+    "name": "Kimi K3 teaser",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-kimi-k3-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-kimi-k3-result.jpg",
+    "handle": "@Kimi_Moonshot",
+    "post": "https://x.com/Kimi_Moonshot/status/2081757327146045450"
+  },
+  {
+    "id": "remix-jordanarchivess",
+    "name": "How do you communicate that",
+    "ratio": "4/3",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-jordanarchivess-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-jordanarchivess-result.jpg",
+    "handle": "@jordanarchivess",
+    "post": "https://x.com/jordanarchivess/status/2107536262894915762"
+  },
+  {
+    "id": "remix-firecrawl",
+    "name": "Firecrawl Free Keyless",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-firecrawl-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-firecrawl-result.jpg",
+    "handle": "@ericciarla",
+    "post": "https://x.com/ericciarla/status/2093375835679977570"
+  },
+  {
+    "id": "remix-authorize-once",
+    "name": "Authorize Once, Everyone Connected",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-authorize-once-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-authorize-once-result.jpg",
+    "post": "https://x.com/ClaudeDevs/status/2091953609185657251",
+    "handle": "@ClaudeDevs"
+  },
+  {
+    "id": "remix-zaro",
+    "name": "Zaro: apps and agents on your context",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-zaro-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-zaro-result.jpg",
+    "handle": "@ZaroAI_",
+    "post": "https://x.com/ZaroAI_/status/2070084796378747316"
+  },
+  {
+    "id": "remix-polymarket-perps",
+    "name": "Polymarket Perps",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-polymarket-perps-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-polymarket-perps-result.jpg",
+    "handle": "@Polymarket",
+    "post": "https://x.com/Polymarket/status/2095530373274816595"
+  },
+  {
+    "id": "remix-web-noise",
+    "name": "From web noise to working UI",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-web-noise-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-web-noise-result.jpg",
+    "post": "https://x.com/firecrawl/status/2057495269785358384",
+    "handle": "@firecrawl"
+  },
+  {
+    "id": "remix-linear-loops",
+    "name": "Linear Loops",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-linear-loops-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-linear-loops-result.jpg",
+    "handle": "@linear",
+    "post": "https://x.com/linear/status/2079233260161323371"
+  },
+  {
+    "id": "remix-glyph",
+    "name": "Glyph: GPU typography for the web",
+    "ratio": "640/461",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-glyph-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-glyph-result.jpg",
+    "handle": "@pmndrs",
+    "post": "https://x.com/pmndrs/status/2100980802091708818"
+  },
+  {
+    "id": "remix-hermes-omarchy",
+    "name": "Hermes in Omarchy",
+    "ratio": "1/1",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-hermes-omarchy-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-hermes-omarchy-result.jpg",
+    "handle": "@NousResearch",
+    "post": "https://x.com/NousResearch/status/2097403926072987986"
+  },
+  {
+    "id": "remix-iskra-light",
+    "name": "Iskra Light",
+    "ratio": "5/4",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-iskra-light-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-iskra-light-result.jpg",
+    "handle": "@world_is_web",
+    "post": "https://x.com/world_is_web/status/2084694934657892557"
+  },
+  {
+    "id": "remix-elevenlabs-reception",
+    "name": "Reception by ElevenLabs",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-elevenlabs-reception-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-elevenlabs-reception-result.jpg",
+    "handle": "@ElevenLabs",
+    "post": "https://x.com/ElevenLabs/status/2100262886916358361"
+  },
+  {
+    "id": "remix-cyera",
+    "name": "Cyera brand video",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-cyera-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-cyera-result.jpg",
+    "handle": "@motionimo",
+    "post": "https://x.com/motionimo/status/2103703350017433670"
+  },
+  {
+    "id": "remix-harvey",
+    "name": "Harvey",
+    "ratio": "16/9",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-harvey-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/remix-harvey-result.jpg",
+    "handle": "@harvey",
+    "post": "https://x.com/harvey/status/2089722668761432349"
+  }
+];
+
+export const aroll = [
+  {
+    "id": "aroll-aiwithsachi",
+    "name": "Top 5 plugins to install in Claude",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/aiwithsachi-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/aiwithsachi-result.jpg",
+    "handle": "@aiwithsachi",
+    "post": "https://www.instagram.com/reel/Dc7G9Pxu_1O/"
+  },
+  {
+    "id": "aroll-tenfoldmarc",
+    "name": "17 video effects Claude can create",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/tenfoldmarc-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/tenfoldmarc-result.jpg",
+    "handle": "@tenfoldmarc",
+    "post": "https://www.instagram.com/reel/Def9pj5TWtA/"
+  },
+  {
+    "id": "aroll-careerwithriya",
+    "name": "6 essential skills to transform your career",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/careerwithriya-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/careerwithriya-result.jpg",
+    "handle": "@careerwithriya",
+    "post": "https://www.instagram.com/reel/Ddd57MBszhc/"
+  },
+  {
+    "id": "aroll-harpercarrollai",
+    "name": "10 Days of AI Basics, Day 1",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/harpercarrollai-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/harpercarrollai-result.jpg",
+    "handle": "@harpercarrollai",
+    "post": "https://www.instagram.com/reel/C4eNPF3PdpG/"
+  },
+  {
+    "id": "aroll-mattfarmerai",
+    "name": "Best AI image generators, October 2026",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/mattfarmerai-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/mattfarmerai-result.jpg",
+    "handle": "@mattfarmerai",
+    "post": "https://www.instagram.com/reel/DeCtQ_9JACg/"
+  },
+  {
+    "id": "aroll-nocode-joshua",
+    "name": "10/10 Claude Skills for marketing",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/nocode-joshua-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/nocode-joshua-result.jpg",
+    "handle": "@nocode.joshua",
+    "post": "https://www.tiktok.com/@nocode.joshua/video/7663973344026397960"
+  },
+  {
+    "id": "aroll-mpaige13",
+    "name": "Granola + Claude Skills",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/mpaige13-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/mpaige13-result.jpg",
+    "handle": "@mpaige13",
+    "post": "https://www.instagram.com/reel/DY5X72kxE-4/"
+  },
+  {
+    "id": "aroll-brockmesarich",
+    "name": "These 5 GitHub Repos Give You Thousands of Free Claude Skills",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/brockmesarich-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/brockmesarich-result.jpg",
+    "handle": "Brock Mesarich",
+    "post": "https://www.youtube.com/shorts/rxOcBowQcS0"
+  },
+  {
+    "id": "aroll-drcintas",
+    "name": "Motion graphics in seconds",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/drcintas-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/drcintas-result.jpg",
+    "handle": "@drcintas",
+    "post": "https://www.instagram.com/reel/DPoXbzZjb8J/"
+  },
+  {
+    "id": "aroll-itsbetterwithai",
+    "name": "Astra makes complete AI videos inside ChatGPT",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/itsbetterwithai-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/itsbetterwithai-result.jpg",
+    "handle": "@itsbetterwithai",
+    "post": "https://www.instagram.com/reel/DdTzYbkCkvc/"
+  },
+  {
+    "id": "aroll-kevinstratvert",
+    "name": "Stop Paying for 5 AI Tools",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/kevinstratvert-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/reference/aroll/kevinstratvert-result.jpg",
+    "handle": "Kevin Stratvert",
+    "post": "https://www.youtube.com/shorts/1fA5j5_5TRY"
+  },
+  {
+    "id": "aroll-dan-martell-tools",
+    "name": "What's the best AI tool right now?",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/dan-martell-tools-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/dan-martell-tools-result.jpg",
+    "handle": "Dan Martell",
+    "post": "https://www.youtube.com/shorts/mk1zJd9Rm4c"
+  },
+  {
+    "id": "aroll-ali-abdaal-workflow",
+    "name": "5 tools I use every day",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ali-abdaal-workflow-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ali-abdaal-workflow-result.jpg",
+    "handle": "@aliabdaal",
+    "post": "https://www.youtube.com/shorts/S2AZbZ_K8vY"
+  },
+  {
+    "id": "aroll-ali-abdaal-archival",
+    "name": "Face over archival art",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ali-abdaal-archival-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ali-abdaal-archival-result.jpg",
+    "handle": "@aliabdaal",
+    "post": "https://www.youtube.com/shorts/Ksjt_I8rDrE"
+  },
+  {
+    "id": "aroll-ali-abdaal-dm",
+    "name": "Reads a DM, answers it",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ali-abdaal-dm-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ali-abdaal-dm-result.jpg",
+    "handle": "Ali Abdaal",
+    "post": "https://www.youtube.com/shorts/jCyhEO3h-Ik"
+  },
+  {
+    "id": "aroll-cindy-zhu-ranking",
+    "name": "Webcam ranking, 1 to 10",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/cindy-zhu-ranking-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/cindy-zhu-ranking-result.jpg",
+    "handle": "@cindiezhu",
+    "post": "https://www.tiktok.com/@cindiezhu/video/7694049166972013831"
+  },
+  {
+    "id": "aroll-hook-open-loops",
+    "name": "Hook, lead, open loops",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/hook-open-loops-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/hook-open-loops-result.jpg",
+    "post": "https://www.instagram.com/reel/DambEp1igDW/",
+    "handle": "@realskytan"
+  },
+  {
+    "id": "aroll-hundred-days-story",
+    "name": "100 days with stickers and photo cards",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/hundred-days-story-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/hundred-days-story-result.jpg",
+    "post": "https://www.instagram.com/reel/Dd6vHlQgpok/",
+    "handle": "@anyway.julia"
+  },
+  {
+    "id": "aroll-khris-sheer-founder",
+    "name": "The Founder Experiments, Ep. 1",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/khris-sheer-founder-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/khris-sheer-founder-result.jpg",
+    "handle": "@khris.sheer",
+    "post": "https://www.tiktok.com/@khris.sheer/video/7491715587895430402"
+  },
+  {
+    "id": "aroll-john-tagudin-capso",
+    "name": "Tool demo with callouts",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/john-tagudin-capso-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/john-tagudin-capso-result.jpg",
+    "handle": "@john.tagudin",
+    "post": "https://www.tiktok.com/@john.tagudin/video/7524883942328126728"
+  },
+  {
+    "id": "aroll-ugc-rachelll",
+    "name": "AI creator with product",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ugc-rachelll-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/ugc-rachelll-result.jpg",
+    "handle": "@ugc.rachelll",
+    "post": "https://www.tiktok.com/@ugc.rachelll/video/7616996050066345246"
+  },
+  {
+    "id": "aroll-gusfiraa-meitu",
+    "name": "Photo glow-up in an editing app",
+    "ratio": "9/16",
+    "result": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/gusfiraa-meitu-result.mp4",
+    "resultPoster": "https://static.heygen.ai/hyperframes-oss/desktop/viral-clone/gusfiraa-meitu-result.jpg",
+    "handle": "@gusfiraa",
+    "post": "https://www.tiktok.com/@gusfiraa/video/7668295832994598162"
+  }
+];
+
+Every video on this page was made with HyperFrames: launch films, cartoons, explainers, 3D, logo stings, live-coded
+music. Click one to watch it with sound.
+
+<FilmRows />
+
+## Remix a video you like
+
+The fastest way to a video you love is to start from one. Every video below is a remix: someone's original, rebuilt
+in HyperFrames with new words, people and brand. Hover to play. Like one? Choose **Remix in Studio** and make your
+own version; see [Reference any video](/studio-app/reference-video) for how it works.
+
+### Launch films and motion graphics
+
+Product launches and type-led motion, rebuilt from the original's cuts, timing and effects.
+
+<RemixShelf items={motion} />
+
+### Talking-head edits
+
+The editing style of popular Reels, TikToks and Shorts, with a different presenter: captions, cutaways, callouts and
+pacing.
+
+<RemixShelf items={aroll} tall />
+
+## Recreate any video, 1:1
+
+Point HyperFrames at a finished video and it rebuilds the same film in editable HTML —
+gestures, type, timing and all. Below, each **reference** (the original, on the left) sits
+next to its **HyperFrames replica** (on the right), matched frame for frame.
+
+<div className="not-prose my-6 space-y-8">
+  <ReplicaCompare
+    title="THE OBLIST"
+    meta="38.58s · 60fps"
+    refSrc="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-oblist-reference-snd.mp4"
+    refPoster="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-oblist-reference.jpg"
+    replicaSrc="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-oblist-replica.mp4"
+    replicaPoster="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-oblist-replica.jpg"
+  />
+  <ReplicaCompare
+    title="Srinika × Mercury"
+    meta="30.56s · 25fps · avatar footage"
+    refSrc="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-srinika-reference-snd.mp4"
+    refPoster="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-srinika-reference.jpg"
+    replicaSrc="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-srinika-replica.mp4"
+    replicaPoster="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/reverse-srinika-replica.jpg"
+  />
+</div>
+
+## Most-installed blocks
+
+These ready-to-run examples are ordered by human requested installs from the last 30 days. Add any block to a project, then customize its content in place.
+
+| Example | Start here |
+| --- | --- |
+| logo-outro | npx hyperframes add logo-outro |
+| data-chart | npx hyperframes add data-chart |
+| editorial-flash-overlay | npx hyperframes add editorial-flash-overlay |
+| organic-light-leak-overlay | npx hyperframes add organic-light-leak-overlay |
+| mk-progress-stat | npx hyperframes add mk-progress-stat |
+| flowchart | npx hyperframes add flowchart |
+| mk-specs-list | npx hyperframes add mk-specs-list |
+| mk-callout-highlight | npx hyperframes add mk-callout-highlight |
+| hw-title | npx hyperframes add hw-title |
+| code-typing | npx hyperframes add code-typing |
+| lt-dark-card | npx hyperframes add lt-dark-card |
+| cinematic-zoom | npx hyperframes add cinematic-zoom |
+
+## Project templates
+
+The init templates remain available for scaffolding complete projects.
+
+| Template | Good starting point for |
+| --- | --- |
+| warm-grain | Branding, lifestyle, and editorial work |
+| play-mode | Energetic social videos and product launches |
+| swiss-grid | Technical, structured, and corporate stories |
+| kinetic-type | Type-led promos, intros, and title cards |
+| decision-tree | Explainable diagrams and tutorials |
+| product-promo | Multi-scene product showcases |
+| nyt-graph | Editorial charts and data stories |
+| vignelli | Bold portrait announcements |
+| blank | Agent-generated or fully custom work |
+
+<Tip>
+  Use npx hyperframes init my-video --example &lt;name&gt; for a full project template, or npx hyperframes add &lt;block&gt; to start from one of the examples above.
+</Tip>
+
+## Related topics
+
+- [Reference any video to recreate its style](/studio-app/reference-video)
+- [What do you want to make?](/workflows)
+- [Make your first video](/quickstart)

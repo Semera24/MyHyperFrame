@@ -1,0 +1,131 @@
+import { setCommandExitCode } from "../utils/commandResult.js";
+import { defineCommand } from "../utils/defineCommand.js";
+import type { Example } from "./_examples.js";
+import { c } from "../ui/colors.js";
+import { failureMessage, jsonFailure } from "../utils/jsonError.js";
+
+export const examples: Example[] = [
+  ["Lint the current project", "hyperframes lint"],
+  ["Lint a specific directory", "hyperframes lint ./my-video"],
+  ["Lint one composition file", "hyperframes lint ./my-video/compositions/intro.html"],
+  ["Output findings as JSON", "hyperframes lint --json"],
+  ["Include info-level findings", "hyperframes lint --verbose"],
+];
+import { formatLintFindings } from "../utils/lintFormat.js";
+import { lintProject } from "../utils/lintProject.js";
+import { isUnderCompositions, resolveLintTarget } from "../utils/project.js";
+import { trackLintRun } from "../telemetry/lintRun.js";
+import { getRunId } from "../telemetry/runId.js";
+import { withMeta } from "../utils/updateCheck.js";
+
+export default defineCommand({
+  meta: {
+    name: "lint",
+    description: "Validate a composition for common mistakes",
+  },
+  args: {
+    dir: {
+      type: "positional",
+      description: "Project directory, or one composition .html file",
+      required: false,
+    },
+    json: {
+      type: "boolean",
+      description: "Output findings as JSON",
+      default: false,
+    },
+    verbose: {
+      type: "boolean",
+      description: "Show info-level findings (hidden by default)",
+      default: false,
+    },
+    "lint-verbose": {
+      type: "boolean",
+      description: "Same as --verbose (render, preview and publish spell it --lint-verbose)",
+      default: false,
+    },
+  },
+  async run({ args }) {
+    // Set process.exitCode + return instead of process.exit(): process.exit()
+    // terminates before Node flushes an async (non-TTY / piped) stdout, so
+    // `hyperframes lint --json | ...` on Windows silently loses the entire JSON
+    // payload written just above the exit. Letting run() return drains stdout
+    // first, then Node exits with the set code — the pattern the other commands
+    // (publish/transcribe/upgrade/play/present) already use.
+    try {
+      const verbose = Boolean(args.verbose || args["lint-verbose"]);
+      const { project, entryFile } = resolveLintTarget(args.dir);
+      const startedAt = Date.now();
+      const lintResult = await lintProject(
+        project.dir,
+        entryFile,
+        entryFile && isUnderCompositions(project.dir, entryFile)
+          ? { isSubComposition: true }
+          : undefined,
+      );
+      trackLintRun(project.dir, lintResult, {
+        command: "lint",
+        durationMs: Date.now() - startedAt,
+        ...(getRunId() !== undefined ? { runId: getRunId() } : {}),
+      });
+
+      if (args.json) {
+        const allFindings = lintResult.results.flatMap((r) => r.result.findings);
+        const combined = {
+          ok: lintResult.totalErrors === 0,
+          errorCount: lintResult.totalErrors,
+          warningCount: lintResult.totalWarnings,
+          infoCount: lintResult.totalInfos,
+          findings: verbose ? allFindings : allFindings.filter((f) => f.severity !== "info"),
+          filesScanned: lintResult.results.length,
+        };
+        console.log(JSON.stringify(withMeta(combined), null, 2));
+        setCommandExitCode(combined.ok ? 0 : 1);
+        return;
+      }
+
+      const fileCount = lintResult.results.length;
+      const fileLabel =
+        fileCount === 1 ? (lintResult.results[0]?.file ?? "index.html") : `${fileCount} files`;
+      console.log(`${c.accent("◆")}  Linting ${c.accent(`${project.name}/${fileLabel}`)}`);
+      console.log();
+
+      if (lintResult.totalErrors === 0 && lintResult.totalWarnings === 0) {
+        console.log(`${c.success("◇")}  ${c.success("0 errors, 0 warnings")}`);
+        return;
+      }
+
+      const lines = formatLintFindings(lintResult, {
+        showElementId: true,
+        showSummary: true,
+        verbose,
+      });
+      for (const line of lines) console.log(line);
+
+      setCommandExitCode(lintResult.totalErrors > 0 ? 1 : 0);
+      return;
+    } catch (err: unknown) {
+      const message = failureMessage(err);
+      if (args.json) {
+        console.log(
+          JSON.stringify(
+            withMeta({
+              ...jsonFailure("runtime_error", message),
+              findings: [],
+              errorCount: 0,
+              warningCount: 0,
+              infoCount: 0,
+              filesScanned: 0,
+            }),
+            null,
+            2,
+          ),
+        );
+        setCommandExitCode(1);
+        return;
+      }
+      console.error(message);
+      setCommandExitCode(1);
+    }
+  },
+});

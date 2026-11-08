@@ -1,0 +1,80 @@
+---
+title: "Make an interactive presentation with AI"
+sidebarTitle: "Presentation"
+description: "Build a deck you present live: reveals on each click, optional branches, hotspots, and presenter mode with notes and a timer."
+---
+
+import { DocsVideo } from "/snippets/docs-video.jsx";
+
+A HyperFrames presentation stays live: you click through it like a deck, with reveals, branches and speaker notes,
+instead of playing a video.
+
+<DocsVideo
+  title="A real deck being navigated — fragments, a branch, and presenter mode"
+  src="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/slideshow-demo-v1.mp4"
+  poster="https://static.heygen.ai/hyperframes-oss/docs/images/showcase/slideshow-demo-v1.jpg"
+/>
+
+*A running deck: points arrive one click at a time, a hotspot jumps to a branch, Back returns to the exact point it
+left, and presenter mode shows the notes and a timer.*
+
+## Make it
+
+Give the agent the material and the decision the presentation should support:
+
+```text
+Turn this product strategy outline into a presentation for our leadership review: [paste outline]
+```
+
+The agent confirms the audience, the main outcome, and
+whether the deck needs reveals, branches or presenter notes; you don't need to plan every slide. With your own agent instead of the app, start the message with `/hyperframes`.
+
+Name the audience and what should change after the presentation. If it should play start to finish with nobody
+presenting, make a [video](/workflows) instead: a deck can't be exported as one MP4 yet.
+
+## How a good deck is built
+
+- **One claim per slide**, with one visual that proves it.
+- **Reveals** when the presenter should add an idea a piece at a time.
+- **Branches and hotspots** for optional detail, so the main story still works if nobody opens them.
+- **Speaker notes** that help the presenter instead of repeating the slide.
+
+To change order, notes, reveals or branches by hand, use the [Slideshow panel](/studio/export#build-a-slideshow) in the browser
+editor.
+
+## Prompts that work
+
+Ask for the deck's moving parts by name: "reveal the bullets one at a time", "branch to a detail slide from a hotspot", "add speaker notes". A full pitch deck in one prompt:
+
+> Build a 5-slide pitch deck, 1920x1080. One idea per slide, each headline a complete-sentence claim (not a label), punchline first. Slide 2 reveals three pain points one at a time as fragments. Slide 3 shows bottom-up market math (accounts × ACV), not a bare "$40B TAM". Add presenter notes to every slide, and a hotspot on slide 3 that branches to a "sizing methodology" detail slide. I'll present it with `hyperframes present`.
+
+This makes a deck you click through, not a video. Each reveal is a stop inside the slide; the hotspot opens a detail slide, and Back returns to the slide that held it.
+
+## Present it
+
+```bash
+npx hyperframes present <project-directory>
+```
+
+Open the local link and press **P** (or click **Present**). The audience gets a clean full-screen view; you see the
+live slide, your notes, what comes next and a timer. In Google Meet, share the audience **tab**; in Zoom, move that tab
+into its own window and share the window.
+
+Use **Next** to step through reveals, including those on the final slide. The Next button disappears once the
+final slide's last reveal is shown.
+
+<Warning>
+  Do not run `hyperframes render` on a deck. It does not fail — a deck has no
+  master root composition, so the render resolves only the **first** slide and
+  writes a silently truncated MP4. You can get six seconds of a forty-second
+  deck and no warning that anything is missing.
+
+  Use `hyperframes present` for the live deck, or `hyperframes snapshot` for
+  per-slide stills.
+</Warning>
+
+## Related topics
+
+- [Build and revise a slideshow in the browser editor](/studio/export#build-a-slideshow)
+- [Use variables and templates](/studio/assets-and-blocks#use-variables)
+- [Make a video instead](/workflows)
