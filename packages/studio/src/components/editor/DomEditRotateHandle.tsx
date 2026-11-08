@@ -22,8 +22,14 @@ export function DomEditRotateHandle({
   const inset = cropOutlineInsetPx ?? { top: 0, right: 0, bottom: 0, left: 0 };
   const visibleLeft = overlayRect.left + inset.left;
   const visibleWidth = Math.max(0, overlayRect.width - inset.left - inset.right);
+  const visibleTop = overlayRect.top + inset.top;
   const visibleBottom = overlayRect.top + overlayRect.height - inset.bottom;
   const currentAngle = Math.round((overlayRect.angle ?? 0) * 10) / 10;
+
+  // Place above the selection so it never covers text lines or elements below it.
+  // If the selection is flush against the top boundary (< 32px), place it below.
+  const placeAbove = visibleTop >= 32;
+  const topPos = placeAbove ? visibleTop - 28 : visibleBottom + 12;
 
   const commitValue = (valStr: string) => {
     const clean = valStr.replace("°", "").trim();
@@ -40,11 +46,16 @@ export function DomEditRotateHandle({
       className="pointer-events-auto absolute flex items-center gap-1.5"
       style={{
         left: visibleLeft + visibleWidth / 2,
-        top: visibleBottom + 12,
+        top: topPos,
         transform: "translateX(-50%)",
         touchAction: "none",
       }}
     >
+      {placeAbove ? (
+        <div className="pointer-events-none absolute left-1/2 -bottom-[12px] h-[12px] w-[1px] -translate-x-1/2 bg-studio-accent/40" />
+      ) : (
+        <div className="pointer-events-none absolute left-1/2 -top-[12px] h-[12px] w-[1px] -translate-x-1/2 bg-studio-accent/40" />
+      )}
       <button
         type="button"
         className="flex items-center justify-center border-0 bg-transparent p-0"

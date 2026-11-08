@@ -494,8 +494,9 @@ export function useAnimatedPropertyCommit(deps: CommitAnimatedPropertyDeps) {
         // just changed the constant instead of dropping a keyframe).
         if (elementHasKeyframes && anim) {
           // With auto-keyframe off (#1808), nudge the whole tween instead of
-          // adding/updating a keyframe at the playhead.
-          if (!usePlayerStore.getState().autoKeyframeEnabled) {
+          // adding/updating a keyframe at the playhead, except for rotation
+          // where the entered value is an absolute angle at the playhead.
+          if (!usePlayerStore.getState().autoKeyframeEnabled && primaryProp !== "rotation") {
             const pct = computeElementPercentage(
               usePlayerStore.getState().currentTime,
               selection,

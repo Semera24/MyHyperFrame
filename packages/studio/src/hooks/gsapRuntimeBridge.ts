@@ -20,12 +20,10 @@ import {
   commitStaticGsapPosition,
   commitStaticGsapRotation,
   commitWholePathOffset,
-  computeCurrentPercentage,
   findExistingPositionWrite,
   findRotationSetAnimation,
   stepListBlock,
 } from "./gsapDragCommit";
-import { commitWholePropertyOffset } from "./gsapWholePropertyOffsetCommit";
 import { isGestureTransactionCommit } from "./gestureTransaction";
 import { tweenReach, tweensForThisElement } from "./gsapTweenReach";
 import { resolveTweenDuration, resolveTweenStart } from "../utils/globalTimeCompiler";
@@ -562,31 +560,15 @@ export async function tryGsapRotationIntercept(
     return { status: "persisted" };
   }
 
-  const pct = computeCurrentPercentage(selection, anim, time);
-
-  // With auto-keyframe off (#1808), a rotation tween already exists for this
-  // element (checked above) so nudge it as a whole rather than adding a
-  // keyframe at the playhead.
-  if (!usePlayerStore.getState().autoKeyframeEnabled) {
-    await commitWholePropertyOffset(
-      selection,
-      anim,
-      { rotation: newRotation },
-      pct,
-      iframe,
-      { commitMutation, fetchAnimations: fetchFallbackAnimations },
-      "Rotate animation",
-    );
-    return { status: "persisted" };
-  }
-
+  // Absolute target rotation at playhead: set the exact keyframe value at the playhead
+  // (creating/updating the keyframe at current time) rather than shifting all keyframes by a relative delta.
   return commitValueAtPlayhead(
     selection,
     anim,
     { rotation: newRotation },
     iframe,
     { commitMutation, fetchAnimations: fetchFallbackAnimations, stamp },
-    { label: "Rotate", backfill: { rotation: newRotation }, holdFromStart: true },
+    { label: "Rotate keyframe", backfill: { rotation: newRotation }, holdFromStart: true },
   );
 }
 
